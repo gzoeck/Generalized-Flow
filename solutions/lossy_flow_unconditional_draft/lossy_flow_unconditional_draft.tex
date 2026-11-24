@@ -1,0 +1,2192 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools,array,booktabs,microtype}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\hypersetup{pdftitle={Regularized Scaling for Lossy Generalized Flow},
+pdfsubject={Clarified proof draft with expanded derivations},pdfauthor={Research manuscript}}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}\newtheorem{definition}[theorem]{Definition}
+\theoremstyle{remark}\newtheorem{remark}[theorem]{Remark}
+\newcommand{\R}{\mathbb R}
+\newcommand{\one}{\mathbf1}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand{\poly}{\operatorname{poly}}
+\DeclareMathOperator{\OPT}{OPT}
+\setlength{\emergencystretch}{2em}
+\setlength{\parskip}{2pt}
+\title{Regularized Scaling for Lossy Generalized Flow\\
+\large A clarified unconditional proof draft}
+\author{Research manuscript}
+\date{22 October 2026}
+\begin{document}
+\maketitle
+\begin{abstract}
+The proposed algorithm optimizes a dual vector and a positive vertex
+scaling together. Its potential is designed to produce two certificates:
+an ordinary grounded graph approximates the scaled generalized incidence
+norm, and the primal imbalance admits a small weighted correction.
+The correction gives an exactly feasible nonnegative flow in a padded
+linear program. Three scalar identities bound its primal--dual gap.
+
+The implementation follows the same structure. One local derivative
+bound controls both curvature and the error of cached complete rows.
+Ordinary accumulated-motion detectors identify which rows to refresh,
+including rows internal to a scaling cut. Potential decrease pays for
+these refreshes and for occasional anchor resets. The main text follows
+this proof chain; the appendices give range estimates, the original-flow
+reduction, exact maximum-delivery repair, and numerical details.
+\end{abstract}
+\noindent\textbf{Proof status.} This is a proposed proof of the stated
+unconditional bound, with the arithmetic model and output guarantees
+specified below. The new arguments remain subject to independent
+mathematical verification.
+\setcounter{tocdepth}{1}
+{\small\tableofcontents}
+\newpage
+
+\section{The claim and the proof in one page}
+
+For an arc $e=(u,v)$, sending $f_e$ units consumes $f_e$ at $u$ and
+supplies $\gamma_e f_e$ at $v$. Let
+$B_e=-e_u^{\mathsf T}+\gamma_e e_v^{\mathsf T}$, so
+$B^{\mathsf T}f$ is net inflow. The source supplies arbitrary flow;
+maximum delivery means maximizing net inflow into the sink.
+
+Let $M=m_{\rm original}+n_{\rm original}+2$, let $0<\delta<1$, and
+let $W\ge2$ bound original costs, capacities, demands, gains, and the
+inverses of nonzero original data. Put
+\[
+ H=100+\lceil\log_2(MW/\delta)\rceil.
+\]
+After the linear-size reduction, $m,n$ denote the reduced numbers of
+rows and coordinates; both are $O(M)$. No lower bound is assumed for
+quantities formed by cancellation, such as a reduced demand or a gradient.
+
+\begin{theorem}[Proposed unconditional bound]\label{thm:main}
+For a feasible generalized minimum-cost flow instance, the algorithm
+returns $0\le\bar f\le u$ with
+\[
+ \norm{B^{\mathsf T}\bar f-d}_\infty\le\delta,
+ \qquad c^{\mathsf T}\bar f\le\OPT+\delta.
+\]
+For lossy maximum delivery, $0<\gamma_e\le1$, it returns a capacitated
+flow with exact internal conservation and delivery at least
+$\OPT-\delta$. The arithmetic work is
+$M^{1+o(1)}\poly(H)$, with high probability.
+\end{theorem}
+
+The output distinctions are essential:
+\begin{center}
+\begin{tabular}{p{.29\linewidth}p{.61\linewidth}}
+\toprule
+Problem & Feasibility guarantee\\\midrule
+Padded linear program & Exact equality and nonnegativity.\\
+Original minimum-cost flow & Exact capacities; additive demand error at most $\delta$.\\
+Lossy maximum delivery & Exact capacities and internal conservation, after a separate repair.\\
+\bottomrule
+\end{tabular}
+\end{center}
+The optimization uses $\poly(H)$ working bits. Exact residual corrections
+and final flow sweeps use original-coefficient arithmetic and shared
+expressions. The operation bound does not bound the expanded encoding
+length of arbitrary rational inputs or products of their gains.
+
+One phase starts with a feasible flow $f^0$ and a feasible dual vector
+$a$. It reduces their certified gap by a constant factor. The logical
+order of the proof is:
+\begin{enumerate}
+\item Identify the correction that would produce a better feasible flow.
+\item Construct a potential whose stationary points certify that correction
+and bound the recovered gap.
+\item Prove that complete rows can be kept current using ordinary graph
+motion detectors.
+\item Charge the cut steps, refreshes, and anchor resets to potential decrease.
+\end{enumerate}
+The reverse norm comparison is required only at the end of a phase.
+It is not an invariant assumed during descent. The scaling itself can
+change on a large cut; the amortized recourse bound concerns its cached
+row representation.
+
+\section{What one phase must produce}\label{sec:phase-target}
+
+\subsection{The grounded linear program and phase data}
+
+The reduced primal--dual pair is
+\begin{equation}\label{eq:LP}
+ \min\{c^{\mathsf T}f:A^{\mathsf T}f=d,\ f\ge0\},
+ \qquad \max\{d^{\mathsf T}y:Ay\le c\}.
+\end{equation}
+Each row has at most two nonzeros, with opposite signs if there are two.
+Every coordinate also has the signed unit unary rows $+e_i^{\mathsf T}$
+and $-e_i^{\mathsf T}$, with positive costs. These ground the dual
+coordinates and provide an elementary exact residual correction.
+Appendix~\ref{app:reduction} gives the reduction and explains what is
+lost when artificial variables are removed.
+
+Fix a nonnegative feasible baseline $f^0$ and a strictly feasible phase
+anchor $a_{\rm start}$. Let
+\begin{equation}\label{eq:phase-data}
+ F=c^{\mathsf T}f^0,\quad
+ \Delta_{\rm start}=F-d^{\mathsf T}a_{\rm start}>0,\quad
+ \lambda=K/\Delta_{\rm start},\quad w=\lambda f^0.
+\end{equation}
+Then $A^{\mathsf T}w=\lambda d$ and
+$w^{\mathsf T}(c-Aa_{\rm start})=K$. Use an internal stopping tolerance
+at most $\delta/100$; the remaining accuracy margin pays for rounding,
+padding, clipping, and final repair.
+
+The phase has a movable displacement anchor $a$, initially
+$a_{\rm start}$, and two optimization fields
+\begin{equation}\label{eq:coordinates}
+ s_i=\log(q_i/a_0),\qquad x_i=(y_i-a_i)/q_i,
+ \qquad y=a+\diag(q)x,
+ \qquad \sigma=c-Ay>0.
+\end{equation}
+This centered logarithmic field starts at zero when $q=a_0\one$.
+It has exactly the same derivatives and cut increments as $\log q$.
+For a two-ended row, its owner $u_e$ is its positive endpoint:
+$A_e=a_e e_{u_e}^{\mathsf T}-b_e e_{v_e}^{\mathsf T}$ with
+$a_e,b_e>0$. Unary rows retain their actual sign.
+
+Throughout, the Huber function and its derivative are
+\[
+ \phi(t)=\begin{cases}t^2/2,&|t|\le1,\\ |t|-1/2,&|t|>1,\end{cases}
+ \qquad\theta(t)=\max\{-1,\min\{1,t\}\}.
+\]
+
+\begin{center}
+\begin{tabular}{p{.27\linewidth}p{.64\linewidth}}
+\toprule
+Fixed within a phase & $f^0,F,\lambda,w,K$ and the barrier references
+$\widehat S=c-Aa_{\rm start}$.\\
+Updated by cut steps & $s,x$, and therefore $q,y,\sigma$ and all row weights.\\
+Changed only by a reset & The displacement anchor $a$; its slack is
+$S^a=c-Aa$ and its mass is $K_a=w^{\mathsf T}S^a$.\\
+\bottomrule
+\end{tabular}
+\end{center}
+In particular $K_a$ need not equal $K$. Keeping these quantities distinct
+prevents a hidden change of the barrier when the anchor is reset.
+
+\subsection{The recovery identity, before the potential}
+
+Suppose a later computation supplies positive row values $\ell_e$.
+Set $L=\ell+w$. We want a correction $v$ such that
+\begin{equation}\label{eq:target-correction}
+ A^{\mathsf T}(\ell-L\odot v)=\lambda d,
+ \qquad \norm v_\infty\le\varepsilon<1.
+\end{equation}
+The flow $(\ell-L\odot v)/\lambda$ has exact conservation, but can
+have negative entries. The baseline fixes that difficulty.
+
+\begin{proposition}[Nonnegative recovery]\label{prop:early-recovery}
+If \eqref{eq:target-correction} holds, then
+\begin{equation}\label{eq:recovery-flow-formula}
+ \boxed{f=\frac{(1-v)\odot\ell+(\varepsilon-v)\odot w}
+                         {\lambda(1+\varepsilon)}}
+\end{equation}
+is nonnegative and satisfies $A^{\mathsf T}f=d$. For any feasible dual
+$y$, let $T=\ell^{\mathsf T}\sigma$ and
+$W_\sigma=w^{\mathsf T}\sigma$. Then
+\begin{equation}\label{eq:recovery-gap-formula}
+ c^{\mathsf T}f-d^{\mathsf T}y
+ \le [T+2\varepsilon W_\sigma]/\lambda.
+\end{equation}
+\end{proposition}
+\begin{proof}
+Both coefficients in the numerator are nonnegative. That numerator is
+$\ell-L\odot v+\varepsilon w$, whose image under $A^{\mathsf T}$ is
+$(1+\varepsilon)\lambda d$. Finally the gap equals
+$\sigma^{\mathsf T}f$. Its numerator is at most
+$(1+\varepsilon)T+2\varepsilon W_\sigma$, proving the bound.
+\end{proof}
+
+Thus the potential has a concrete job: certify a small correction and
+make $T$ small compared with $K$. It does not need to make $q$ change
+in only a few coordinates.
+
+% Replacement scalar-potential and range sections.  The preceding setup
+% supplies phase data, sigma,x,s,phi,theta, and signed physical rows A.
+\section{The potential, defined by one scalar equation}
+\label{sec:potential}\label{sec:envelope-ranges}
+
+The barrier reference and the displacement anchor have different jobs.
+At phase start, fix
+\[
+ \widehat S_e=c_e-A_ea_{\rm start}>0.
+\]
+An anchor reset changes $a$ and hence the current anchor slacks
+$S_e^a=c_e-A_ea$; it does not change $\widehat S_e$, $w$, or $\lambda$.
+This distinction will matter in the phase-progress calculation.
+
+Fix $B=64$, $\eta=1/8$, and a barrier exponent $0<\alpha_{\rm b}\le1$.
+For $z>0$, define
+\[
+ \beta_e(z)=-B\log\frac z{S_{\max}}
+       +\frac B{\alpha_{\rm b}}
+              \left(\frac{\widehat S_e}{z}\right)^{\alpha_{\rm b}}.
+\]
+Here $S_{\max}$ is an upper bound on every feasible dual slack.
+The logarithm keeps a slack positive.  The power term will turn a
+potential bound into a bound on complementarity.
+
+For the current $(y,q)$, put
+\[
+ r_e^0=q_{u_e}^{-\kappa}A_eq,\qquad
+ t_e^0=\frac{q_{u_e}^{-\kappa}}{b_0}A_e(y-a),\qquad
+ b_e=|r_e^0|+\eta|t_e^0|.
+\]
+The superscript $0$ means that these quantities do not contain the
+unknown row weight.  For a trial $\ell>0$, let $z_e(\ell)>0$ be the
+unique solution of
+\begin{equation}\label{eq:barrier-inverse}
+ \ell=-\beta'_e(z_e(\ell))
+ =\frac B{z_e(\ell)}
+       \left[1+\left(\frac{\widehat S_e}{z_e(\ell)}\right)
+                         ^{\alpha_{\rm b}}\right].
+\end{equation}
+This inverse is well defined because $-\beta'_e$ decreases continuously
+from $+\infty$ to zero.
+
+The row computation is the following single scalar root:
+\begin{equation}\label{eq:envelope-root-exact}
+ \sigma_e=z_e(\ell_e)
+   +r_e^0\theta((\ell_e+w_e)r_e^0)
+   +\eta t_e^0\theta((\ell_e+w_e)t_e^0).
+\end{equation}
+After finding it, set
+\[
+ L_e=\ell_e+w_e,\quad z_e=z_e(\ell_e),\quad
+ C=\diag(L_eq_{u_e}^{-\kappa})A\diag(q),\quad
+ r=C\one,\quad t=Cx/b_0.
+\]
+Thus $r_e=L_er_e^0$ and $t_e=L_et_e^0$.  Define the row potential by
+\begin{equation}\label{eq:row-root-value}
+ \boxed{\quad
+ \Psi_e=\beta_e(z_e)-\ell_e(\sigma_e-z_e)
+                         +\phi(r_e)+\eta\phi(t_e).\quad}
+\end{equation}
+If the root does not exist, set $\Psi_e=+\infty$.
+
+The full potential is
+\begin{equation}\label{eq:potential}
+ \Phi_a(y,q)=\lambda(F-d^\top y)+\sum_e\Psi_e+R(q)+E(x).
+\end{equation}
+Here
+\[
+ R(q)=\sum_i\omega_i\left[\frac{a_0}{q_i}-\log\frac{q_i}{a_0}\right],
+ \qquad E(x)=\sum_i\frac{\omega_i}{p}(x_i/b_0)^p,
+\]
+and $\omega_i=64\deg_A(i)+1$.
+The integer $p\ge2$ is even.  The inverse term in $R$ prevents a
+scaling coordinate from approaching zero within a bounded sublevel;
+the paired unary rows will bound it from above.  Neither conclusion
+comes from the negative logarithm alone.
+
+\begin{lemma}[The root and the exact finite domain]
+\label{lem:envelope-root}\label{lem:envelope-domain}
+The root \eqref{eq:envelope-root-exact} exists uniquely precisely when
+\[
+ \boxed{\sigma_e>|r_e^0|+\eta|t_e^0|.}
+\]
+On this domain the row potential is continuously differentiable and
+its derivatives can be evaluated holding $\ell_e$ fixed.  With
+$c_\eta=(1+\eta)/2$, it satisfies
+\begin{align}
+ \beta_e(\sigma_e-b_e)+w_eb_e-c_\eta
+ &\le\Psi_e\le\beta_e(\sigma_e-b_e)+w_eb_e,
+ \label{eq:scalar-sandwich}\\
+ \Psi_e&\ge\beta_e(\sigma_e),
+ \label{eq:barrier-lower}\\
+ \sigma_e-b_e&\le z_e\le\sigma_e,
+ \label{eq:root-slack-range}\\
+ \Psi_e&\ge\beta_e(z_e)-c_\eta.
+ \label{eq:root-value-lower}
+\end{align}
+\end{lemma}
+
+\begin{proof}
+Suppress the row subscript.  Write $z=z(\ell)$ and consider
+\[
+ J(\ell)=\beta(z)+\ell(z-\sigma)
+       +\phi((\ell+w)r^0)+\eta\phi((\ell+w)t^0).
+\]
+The identity $\beta'(z)=-\ell$ cancels the derivatives of $z$, giving
+\[
+ J'(\ell)=z-\sigma+r^0\theta((\ell+w)r^0)
+                         +\eta t^0\theta((\ell+w)t^0).
+\]
+For $v=(\widehat S/z)^{\alpha_{\rm b}}$,
+\[
+ \frac{\beta''(z)}{\ell^2}
+   =\frac{1+(1+\alpha_{\rm b})v}{B(1+v)^2}
+   \le\frac{1+\alpha_{\rm b}}B.
+\]
+Hence $z'(\ell)=-1/\beta''(z)\le-B/[(1+\alpha_{\rm b})\ell^2]$.
+A Huber term has nonzero second derivative only when the absolute
+value of its argument is below one.  Since $\ell+w\ge\ell$, the
+two positive second derivatives sum to at most $(1+\eta)/\ell^2$.
+Therefore, away from the Huber breakpoints,
+\[
+ J''(\ell)\le-
+ \frac{B/(1+\alpha_{\rm b})-1-\eta}{\ell^2}<0.
+\]
+The first derivative is continuous and strictly decreasing.  Its limits
+at zero and infinity are $+\infty$ and $-\sigma+b$, respectively.
+It consequently has exactly one zero when $\sigma>b$ and none otherwise.
+The zero is the unique maximum of $J$, proving that the root-defined
+value is equivalently $\Psi=\sup_{\ell>0}J(\ell)$.
+
+For $s>0$, the function $\beta(z(\ell))+\ell(z(\ell)-s)$ has
+derivative $z(\ell)-s$ and maximum $\beta(s)$.  Together with
+$|u|-1/2\le\phi(u)\le|u|$, this proves the sandwich.
+If $\sigma\le b$, the lower Huber bound instead gives
+\[
+ J(\ell)\ge\beta(z(\ell))+\ell z(\ell)
+                    +\ell(b-\sigma)+wb-c_\eta\longrightarrow+\infty.
+\]
+Indeed $z(\ell)\to0$ and $\beta(z(\ell))\to+\infty$.
+This also proves the exact finite-domain assertion from the variational
+description.  Choosing the trial value $\ell=-\beta'(\sigma)$ and
+deleting the nonnegative Huber terms proves \eqref{eq:barrier-lower}.
+
+Every product $r^0\theta((\ell+w)r^0)$ is between zero and $|r^0|$;
+the same holds for $t^0$.  The root equation therefore gives
+\eqref{eq:root-slack-range}.  At the root, put
+$F_r=r\theta(r)+\eta t\theta(t)$.  Then
+\[
+ \Psi=\beta(z)-\frac\ell L F_r+\phi(r)+\eta\phi(t)
+       \ge\beta(z)-c_\eta,
+\]
+because $0<\ell/L\le1$ and $\phi(u)-u\theta(u)\ge-1/2$.
+Finally, the strict local derivative bound keeps the unique maximizer
+in a compact interval under a small parameter perturbation.  Its
+continuous dependence and the elementary envelope theorem give the
+stated differentiability rule.
+\end{proof}
+
+\begin{remark}[Relation to the conjugate formula]
+If $\beta_e^*$ denotes the convex conjugate, then
+$-\beta_e^*(-\ell)=\beta_e(z_e(\ell))+\ell z_e(\ell)$.
+Thus the variational formula just proved is exactly the conjugate
+envelope.  The algorithm only needs the scalar equation
+\eqref{eq:envelope-root-exact}.
+\end{remark}
+
+
+
+\section{The derivatives and the certificates they are designed to give}
+\label{sec:gradients}
+
+Three gradients occur because a scaling update with $x$ fixed also
+changes the physical dual vector $y$. Define
+\[
+ g=\diag(q)A^{\mathsf T}(\ell-w),\quad
+ e_i=\frac{\omega_i}{b_0}(x_i/b_0)^{p-1},\quad
+ v_i=\omega_i[1+a_0/q_i+(x_i/b_0)^p],
+\]
+\[
+ h_i=v_i+\kappa\sum_{e:u_e=i}
+              [r_e\theta(r_e)+\eta t_e\theta(t_e)].
+\]
+All terms in $h$ are nonnegative, and $h_i\ge\omega_i$.
+The derivatives are
+\begin{align}\label{eq:gradients}
+ g_q&=C^{\mathsf T}\theta(r)-h,
+ &&\text{logarithmic scaling derivative at fixed physical }y,\\
+ g_x&=g+\frac\eta{b_0}C^{\mathsf T}\theta(t)+e,
+ &&\text{derivative with respect to }x\text{ at fixed }s,\nonumber\\
+ G&=g_q+\diag(x)g_x,
+ &&\text{derivative with respect to }s\text{ at fixed }x.\nonumber
+\end{align}
+The algorithm optimizes $G$ and $g_x$. The scaling certificate uses
+$g_q$. Section~\ref{sec:recovery-endpoint} proves the norm estimate
+needed to pass from the former pair to the latter.
+
+\subsection{Deriving the formulas}
+
+The root construction permits envelope differentiation: hold $\ell_e$
+fixed when taking a first derivative. For an $x$-variation,
+$dy=D_qdx$, and
+\[
+ d\sigma=-AD_qdx,\qquad
+ L_e\,dt_e^0=C_e dx/b_0,\qquad d r_e^0=0.
+\]
+The linear objective contributes $-A^{\mathsf T}w$, the slack term
+contributes $A^{\mathsf T}\ell$, the displacement Huber term contributes
+$(\eta/b_0)C^{\mathsf T}\theta(t)$, and $E$ contributes $e$.
+This proves the formula for $g_x$.
+
+At fixed physical $y$, $dx=-x\odot ds$. The row variations are
+\[
+ L_e,dr_e^0=C_e ds-\kappa r_e ds_{u_e},\qquad
+ L_e,dt_e^0=-\kappa t_e ds_{u_e}.
+\]
+The vertex regularizers contribute
+$-\omega_i(1+a_0/q_i)-\omega_i(x_i/b_0)^p$.
+Combining these terms gives $g_q$. Finally, at fixed $x$,
+$dy=D_q\diag(x)ds$, so the chain rule gives
+$G=g_q+\diag(x)g_x$. The apparent scaling derivative of $E$ cancels
+in $G$, because $E(x)$ is independent of $s$ in the actual coordinates.
+
+\subsection{The only range facts needed in the main argument}
+
+The unary rows and the potential give explicit ranges; their proofs are
+in Appendix~\ref{sec:paired-unary-ranges}. On a phase sublevel
+$\Phi\le P$, write
+\[
+ D=P+\Omega\log(q_{\max}/a_0),\qquad
+ \Omega=\sum_i\omega_i,\qquad q_{\max}=C_0^{1/(1-\kappa)},
+\]
+where $C_0\ge\max|c_e|$ also bounds the paired unary costs.
+Then
+\begin{equation}\label{eq:range-summary}
+ \lambda(F-d^{\mathsf T}y)+\sum_e\Psi_e+
+ \sum_i\omega_i a_0/q_i+E(x)\le D,
+ \quad q_i\ge\omega_i a_0/D,
+ \quad |x_i|\le b_0(pD/\omega_i)^{1/p}.
+\end{equation}
+Moreover the finite-domain margin is positive, all scalar row weights
+have logarithmic range $\poly(H)$, and
+\begin{equation}\label{eq:Z-summary}
+ Z:=\sum_e\ell_ez_e\le Bm+\alpha_{\rm b}D+
+                         \alpha_{\rm b}m(1+\eta)/2.
+\end{equation}
+These facts justify the local derivatives before stationarity is known.
+An additional endpoint argument, using the norm certificate, proves
+$q_i>a_0$ and hence $\sum_i\omega_i(1+a_0/q_i)\le2\Omega$.
+It is used only after the endpoint test; it is not assumed during descent.
+
+% Replacement endpoint/recovery section. The preceding text defines the LP,
+% potential, r=C1, t=Cx/b_0, and all three gradients in eq:gradients.
+% Requires amsmath, amssymb, amsthm. Citation key: sherman.
+
+\section{What stationarity gives, and how to recover the flow}
+\label{sec:recovery-endpoint}
+
+The endpoint argument has a short logical chain. The two coordinate
+gradients certify a good ordinary graph norm. They also certify that the
+primal imbalance has a small correction in the required weighted norm.
+A general minimum-norm solver constructs that correction. Finally, three
+scalar identities bound the primal--dual gap of the recovered flow.
+No dynamic invariant is used in these static arguments.
+
+\subsection{The scaling certificate in one absorption argument}
+
+For a two-ended row $C_e=Q_e e_u^{\mathsf T}-R_e e_v^{\mathsf T}$,
+$Q_e,R_e\ge0$, use the ordinary row norm
+\[
+ \rho_e(z)=R_e|z_u-z_v|+|Q_e-R_e||z_u|.
+\]
+For $\|b\|_{N,*}=\sup_{z\ne0}|b^{\mathsf T}z|/N(z)$ we use the usual dual norm. A unary row contributes its absolute coefficient times $|z_u|$; its
+physical sign is retained in $C$. Write
+\[
+ \rho=\sum_e\rho_e,\qquad N(z)=\rho(z)+h^{\mathsf T}|z|.
+\]
+Thus $N$ is an ordinary graph norm with positive ground edges. Always,
+\begin{equation}\label{eq:recovery-proxy-basic}
+ \|Cz\|_1\le\rho(z)\le N(z),\qquad N(|z|)\le N(z).
+\end{equation}
+The reverse comparison will follow from stationarity; it is not assumed.
+
+\begin{lemma}[Scaling and displacement certificates]
+\label{lem:recovery-absorption}
+Suppose $\|x\|_\infty\le X$, $0<\kappa,\eta\le1$, and put
+\[
+ L_x=\frac{2(X+b_0/\eta)}\kappa,\qquad \Lambda=8/\kappa.
+\]
+Then $N(x\odot z)\le L_xN(z)$ for every $z$. If
+\[
+ \|G\|_{N,*}\le\tau_s,\qquad \|g_x\|_{N,*}\le\tau_x,
+ \qquad \delta_s:=\tau_s+L_x\tau_x\le\kappa/32,
+\]
+then
+\begin{equation}\label{eq:recovery-norm-certificate}
+ \|g_q\|_{N,*}\le\delta_s,\qquad
+ \|Cz\|_1\le N(z)\le\Lambda\|Cz\|_1,\qquad
+ h^{\mathsf T}|z|\le2\|Cz\|_1.
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+First, multiplication by $x$ has a controlled cost. On a two-ended row,
+\[
+ \rho_e(xz)\le X\rho_e(z)+R_e|x_u-x_v||z_u|,
+ \qquad R_e|x_u-x_v|\le b_0|t_e|+X|r_e|.
+\]
+For the Huber derivative,
+\begin{equation}\label{eq:recovery-huber-elementary}
+ |a|\le a\theta(a)+\tfrac14.
+\end{equation}
+Consequently, the sum of the extra coefficients at owner $i$ is bounded
+by the energy terms $\kappa\sum_{e:u_e=i}(r_e\theta(r_e)+
+\eta t_e\theta(t_e))$ in $h_i$, plus
+$(b_0+X)\deg_A(i)/4$. The latter is paid by
+$\omega_i\ge64\deg_A(i)$. This gives
+\[
+ \rho(xz)\le X\rho(z)+
+ \max\{X/\kappa,b_0/(\kappa\eta),(b_0+X)/256\}\,h^{\mathsf T}|z|.
+\]
+Adding $h^{\mathsf T}|xz|\le Xh^{\mathsf T}|z|$ proves the claimed
+$L_x$ bound. Unary rows need only the direct $X$ bound.
+
+The gradient identity $g_q=G-\operatorname{diag}(x)g_x$ now gives
+$\|g_q\|_{N,*}\le\delta_s$. The rest is the following absorption.
+For $D_z=\|Cz\|_1$ and $H_z=h^{\mathsf T}|z|$,
+\begin{align*}
+ H_z&\le D_z+\delta_sN(z),
+       &&\text{test }g_q=C^{\mathsf T}\theta(r)-h\text{ against }|z|,\\
+ \rho(z)&\le D_z+(2/\kappa)H_z,
+       &&\text{use }\rho_e(z)\le|C_ez|+2|r_e||z_u|,\\
+ N(z)&\le D_z+(1+2/\kappa)H_z,\\
+ [1-(1+2/\kappa)\delta_s]N(z)&\le(2+2/\kappa)D_z,\\
+ N(z)&\le(8/\kappa)D_z,\qquad H_z\le2D_z.
+\end{align*}
+In the first line, $\|C|z|\|_1\le\|Cz\|_1$ for opposite-sign
+two-ended rows, and $N(|z|)\le N(z)$. In the second line,
+\eqref{eq:recovery-huber-elementary} gives
+$\sum_{e:u_e=i}|r_e|\le h_i/\kappa$. The final line uses
+$\delta_s\le\kappa/32$.
+\end{proof}
+
+This proves the endpoint certificate directly from the actual coordinate
+gradients $G,g_x$. There is no need to assume that the fixed-$y$ gradient
+$g_q$ was separately optimized, or that the reverse norm comparison held
+earlier in the phase.
+
+\subsection{The correct norm for primal recovery}
+
+Define
+\[
+ B_0=\operatorname{diag}(L)A\operatorname{diag}(q),\qquad
+ 0<q_{\kappa,-}\le q_{u_e}^{\kappa}\le q_{\kappa,+}\quad\text{for every row }e.
+\]
+We need $B_0^{\mathsf T}v=g$ with small $\|v\|_\infty$.
+This is a weighted correction for $C$, because
+$B_0=\operatorname{diag}(q_{u_e}^{\kappa})C$.
+Write $\operatorname{opt}_{B_0}(b)=
+\min\{\|v\|_\infty:B_0^{\mathsf T}v=b\}$.
+
+\begin{lemma}[A weighted correction certificate]
+\label{lem:recovery-radius}
+A vector $b$ has a correction of radius $\varepsilon$ if and only if
+\begin{equation}\label{eq:recovery-zonotope}
+ |b^{\mathsf T}z|\le\varepsilon\|B_0z\|_1\quad\text{for every }z.
+\end{equation}
+Under Lemma~\ref{lem:recovery-absorption},
+\begin{equation}\label{eq:recovery-radius}
+ \operatorname{opt}_{B_0}(g)
+ \le\frac{\Lambda\tau_x+(\eta+2)/b_0}{q_{\kappa,-}}.
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+The compact convex set $B_0^{\mathsf T}[-\varepsilon,\varepsilon]^m$
+has support function $\varepsilon\|B_0z\|_1$. Separation proves
+\eqref{eq:recovery-zonotope}, including sufficiency.
+For the radius bound, use the displacement-gradient identity in
+\eqref{eq:gradients} and
+$|e_i|\le h_i/b_0$ to get
+\[
+ |g^{\mathsf T}z|
+ \le\tau_xN(z)+(\eta/b_0)\|Cz\|_1+b_0^{-1}h^{\mathsf T}|z|
+ \le[\Lambda\tau_x+(\eta+2)/b_0]\|Cz\|_1.
+\]
+Now $\|B_0z\|_1\ge q_{\kappa,-}\|Cz\|_1$, proving
+\eqref{eq:recovery-radius}.
+\end{proof}
+
+The correction equation $B_0^{\mathsf T}v=g$ is equivalent to
+$A^{\mathsf T}(\ell-L\odot v)=\lambda d$ after cancelling $D_q$.
+Proposition~\ref{prop:early-recovery} therefore gives the nonnegative
+flow and its gap bound, with no further feasibility assumption.
+
+In particular, a bound on an unweighted solution of $C^{\mathsf T}z=g$
+cannot replace \eqref{eq:recovery-radius}. The factor
+$q_{\kappa,-}^{-1}$ records precisely the additional range requirement.
+
+\subsection{Constructing a correction of a known radius}
+
+The radius certificate gives more information than the recovery algorithm
+needs: an explicit positive number
+\[
+ r_*:=\frac{\Lambda\tau_x+(\eta+2)/b_0}{q_{\kappa,-}}
+ \quad\text{such that}\quad \operatorname{opt}_{B_0}(g)\le r_*.
+\]
+We construct a correction of norm at most $3r_*/2$. There is no search for
+the possibly much smaller optimum and no precision requirement relative
+to that optimum. This is useful when cancellation makes the true
+imbalance arbitrarily small, or exactly zero.
+
+The imported object is an ordinary \emph{congestion approximator}:
+\begin{equation}\label{eq:recovery-preconditioner-import}
+ \|Rb\|_\infty\le\operatorname{opt}_{D_N}(b)
+                 \le\chi\|Rb\|_\infty
+ \qquad\text{for every nonground demand }b.
+\end{equation}
+Here $N(z)=\|D_Nz\|_1$. Sherman's Theorem~6.1~\cite{sherman}, with
+the normalized cut-congestion construction in his Section~6.1, builds
+such a linear map with $\chi=n^{o(1)}$ in $M^{1+o(1)}$ work and applies
+$R,R^{\mathsf T}$ in $n^{1+o(1)}$ work. Ground demands are included by
+augmenting $b$ with $-\sum_i b_i$. Each normalized cut row has the form
+$\mathbf1_S^{\mathsf T}b/\operatorname{cap}(\partial S)$, which proves
+the first inequality. The second is the congestion approximation
+property. The import explicitly includes both inequalities; it is not
+merely a condition bound for a potentially noninjective map. In
+particular it makes $R$ injective on the demand space. This is the
+left-cancellable preconditioner convention stated in Section~5 of the
+same paper.
+
+\begin{proposition}[Known-radius correction]
+\label{thm:recovery-constructive}
+Set
+\[
+ \kappa_0=\chi\Lambda q_{\kappa,+}/q_{\kappa,-},\qquad
+ M_0=\max_i\frac{\sum_eL_e|A_{ei}|}{L_{\rm unary(i)}}
+       \le mA_{\max}L_{\max}/L_{\min},\qquad A_{\max}=\max_{e,i}|A_{ei}|.
+\]
+Given
+$\operatorname{opt}_{B_0}(g)\le r_*$, one can construct an exact
+correction of norm at most $3r_*/2$ using one ordinary preconditioner
+build and
+\begin{equation}\label{eq:recovery-static-iterations}
+ O\bigl(\kappa_0^2\log(2k)[1+\log M_0]\bigr)
+\end{equation}
+products by $B_0,B_0^{\mathsf T},R,R^{\mathsf T}$ and simple vector
+operations. Here $k$ is the number of rows of $R$.
+Every product costs $M^{1+o(1)}$ work. Thus the static solve costs
+$M^{1+o(1)}\operatorname{poly}(H)$ under the previously proved range
+bounds. Its smallest stage radius is at least $r_*/(24M_0)$.
+\end{proposition}
+
+\begin{proof}
+First dualize the endpoint norm comparisons and use
+\eqref{eq:recovery-preconditioner-import}. For every demand $b$,
+\begin{equation}\label{eq:recovery-preconditioned-bounds}
+ \|Rb\|_\infty\le q_{\kappa,+}\operatorname{opt}_{B_0}(b),
+ \qquad
+ \operatorname{opt}_{B_0}(b)\le
+      \frac{\chi\Lambda}{q_{\kappa,-}}\|Rb\|_\infty.
+\end{equation}
+We describe a constant-factor residual reduction, then repeat it.
+
+Suppose a residual $h$ satisfies $\operatorname{opt}_{B_0}(h)\le\rho$.
+For $\|u\|_\infty\le\rho$, define $2k$ signed losses
+\[
+ \mathcal L_{a,\pm}(u)=
+ \frac{\pm[R(B_0^{\mathsf T}u-h)]_a}{q_{\kappa,+}\rho},
+ \qquad a=1,\ldots,k.
+\]
+Both terms in the numerator have norm at most $q_{\kappa,+}\rho$,
+by \eqref{eq:recovery-preconditioned-bounds}; therefore all losses lie
+in $[-2,2]$. There is a feasible witness $u^*$ in this cube with every
+loss zero. For any probability vector $p_t$ on the signed coordinates,
+we can consequently choose a best response $u_t$ with
+\[
+ p_t^{\mathsf T}\mathcal L(u_t)\le0.
+\]
+This best response is explicit. If $p_t^+,p_t^-$ are its two halves,
+\[
+ u_t=-\rho\,\operatorname{sign}
+       \bigl(B_0R^{\mathsf T}(p_t^+-p_t^-)\bigr).
+\]
+The convention at zero can be arbitrary.
+
+Here is the required multiplicative-weights estimate, including its
+constants. Start all $2k$ weights at one, normalize them to $p_t$, and
+multiply weight $a$ by
+$\exp(\vartheta\mathcal L_a(u_t))$, where
+$\vartheta=1/(64\kappa_0)$. Since $|\vartheta\mathcal L_a|\le1$,
+$e^z\le1+z+z^2$ gives an upper bound
+\[
+ \log Z_{T+1}\le\log(2k)
+       +\vartheta\sum_{t=1}^T p_t^{\mathsf T}\mathcal L(u_t)
+       +4\vartheta^2T
+ \le\log(2k)+4\vartheta^2T
+\]
+for the total weight. The weight of an individual coordinate gives the
+matching lower bound
+$\log Z_{T+1}\ge\vartheta\sum_t\mathcal L_a(u_t)$.
+Thus $T\ge1024\kappa_0^2\log(2k)$ ensures
+\[
+ \max_a\frac1T\sum_{t=1}^T\mathcal L_a(u_t)
+ \le\frac{\log(2k)}{\vartheta T}+4\vartheta
+ \le\frac1{8\kappa_0}.
+\]
+For $\bar u=T^{-1}\sum_tu_t$, linearity of the losses implies
+\[
+ \|R(B_0^{\mathsf T}\bar u-h)\|_\infty
+       \le\frac{q_{\kappa,+}\rho}{8\kappa_0}.
+\]
+The second inequality in \eqref{eq:recovery-preconditioned-bounds}
+then proves
+\[
+ \|\bar u\|_\infty\le\rho,\qquad
+ \operatorname{opt}_{B_0}(h-B_0^{\mathsf T}\bar u)\le\rho/8\le\rho/4.
+\]
+
+Start with $h_0=g$ and $\rho_0=r_*$. At stage $j$, add the vector
+$\bar u_j$ just constructed, set
+$h_{j+1}=h_j-B_0^{\mathsf T}\bar u_j$, and use
+$\rho_{j+1}=\rho_j/4$. Stop at
+$J=\lceil\log_4(6M_0)\rceil$. The sum of stage vectors has norm at
+most $\sum_{j<J}\rho_j\le4r_*/3$.
+To finish exactly, choose one unit unary row at each vertex, with sign
+$s_i\in\{-1,1\}$, and define the right inverse
+\[
+ (Ub)_{\rm unary(i)}=s_i b_i/(L_{\rm unary(i)}q_i),\qquad
+ (Ub)_e=0\text{ on the other rows}.
+\]
+Then $B_0^{\mathsf T}Ub=b$ and
+$\|Ub\|_\infty\le M_0\operatorname{opt}_{B_0}(b)$: test any feasible
+$B_0^{\mathsf T}v=b$ at vertex $i$ to prove the latter inequality.
+The final addition $Uh_J$ has norm at most $M_0\rho_J\le r_*/6$.
+The resulting equation is exact, and the total norm is at most
+$(4/3+1/6)r_*=3r_*/2$. Minimality of $J$ also gives
+$\rho_J\ge r_*/(24M_0)$. The number of stages and the iteration bound
+above prove \eqref{eq:recovery-static-iterations}.
+\end{proof}
+
+This construction is the elementary residual-recursion mechanism behind
+Sherman's general solver, specialized to a known radius. It avoids
+relative approximation to an unknown optimum. The stronger $\rho/8$
+estimate leaves half the stated $\rho/4$ reduction budget for numerical
+errors. The numerical section
+uses absolute error budgets at the displayed stage radii, preserving a
+fixed fraction of $r_*$ for snapshot perturbation and the actual final
+unary residual. That argument gives a correction of norm at most $2r_*$;
+it needs no lower bound on the true imbalance.
+
+\subsection{Complementarity from three scalar identities}
+
+There are two anchors to keep distinct. The phase fixes its budget
+$K=\lambda\Delta_{\rm start}$ and its barrier references $\widehat S$.
+The displacement anchor $a$ may be reset. Its current slack and mass are
+\[
+ S^a=c-Aa,\qquad K_a=w^{\mathsf T}S^a.
+\]
+In general $K_a\ne K$. Only the displacement identity uses $S^a$;
+the power barrier always uses $\widehat S$.
+
+Write
+\[
+ E_r=\sum_er_e\theta(r_e),\quad E_t=\sum_et_e\theta(t_e),\quad
+ E_p=\sum_i\omega_i(x_i/b_0)^p,\quad
+ V=\sum_i\omega_i(1+a_0/q_i),\quad Z=\sum_e\ell_ez_e.
+\]
+Let $\xi_x=g_x^{\mathsf T}x$ and $\xi_q=g_q^{\mathsf T}\mathbf1$.
+The scalar root equation and the two Euler tests give exactly
+\begin{align}
+ T&=Z+\sum_e\frac{\ell_e}{L_e}
+               [r_e\theta(r_e)+\eta t_e\theta(t_e)],
+ \label{eq:recovery-euler-root}\\
+ \ell^{\mathsf T}S^a-T-K_a+W_\sigma+\eta E_t+E_p&=\xi_x,
+ \label{eq:recovery-euler-x}\\
+ (1-\kappa)E_r-\kappa\eta E_t-V-E_p&=\xi_q.
+ \label{eq:recovery-euler-q}
+\end{align}
+The first line uses the scalar root; the second tests the displacement
+gradient with $x$ and uses $A(y-a)=S^a-\sigma$; the third sums the
+fixed-$y$ scaling gradient. These three identities are the entire
+complementarity argument.
+
+\begin{lemma}[A usable complementarity bound]
+\label{lem:recovery-complementarity}
+Let $\kappa\le1/4$, $\alpha_{\rm b}\le1$, and suppose the preceding
+endpoint certificate holds. Put
+\[
+ \beta_0=b_0q_{\kappa,-},\qquad
+ \gamma=\Lambda\tau_xb_0,\qquad \zeta=\Lambda\delta_s.
+\]
+Assume $\zeta\le1/4$, $\gamma\le\beta_0/2$, and $\beta_0\ge16\eta$.
+If the sublevel bound gives
+$W_\sigma\le D$ and $\sum_e\Psi_e\le D$, and the endpoint and
+anchor analyses give $V\le V_{\rm cap}$ and $E_p\le E_{\rm cap}$,
+then, for
+$A_*=Bm+V_{\rm cap}+E_{\rm cap}+(1+\eta)m$,
+\begin{equation}\label{eq:recovery-complementarity}
+ T\le4A_*+2\alpha_{\rm b}D+
+                    \frac{16\eta}{b_0q_{\kappa,-}}K_a.
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+The norm certificate and \eqref{eq:recovery-huber-elementary} give
+\[
+ |\xi_x|\le\gamma(E_t+m/4),\qquad
+ |\xi_q|\le\zeta(E_r+m/4).
+\]
+Absorb the second error in \eqref{eq:recovery-euler-q}; since
+$1-\kappa-\zeta\ge1/2$, the first Euler identity gives
+\begin{equation}\label{eq:recovery-t-first}
+ T\le Z+2(V+E_p)+2\eta E_t+\zeta m/2.
+\end{equation}
+Next, $E_t\le\sum_e|t_e|\le
+\sum_eL_e(S^a_e+\sigma_e)/\beta_0$. In this expression the current
+baseline gap cancels exactly:
+\[
+ \sum_eL_e(S^a_e+\sigma_e)
+ =\ell^{\mathsf T}S^a+K_a+T+W_\sigma
+ =2T+2K_a-\eta E_t-E_p+\xi_x.
+\]
+Hence
+\[
+ E_t\le\frac{2T+2K_a+\gamma m/4}{\beta_0-\gamma}.
+\]
+Substitute into \eqref{eq:recovery-t-first}. Its new coefficient of
+$T$ is at most $8\eta/\beta_0\le1/2$. Absorbing it yields
+\[
+ T\le2Z+4(V+E_p)+\zeta m+
+                    \frac{8\eta}{\beta_0}(2K_a+\gamma m/4).
+\]
+Finally, the scalar barrier satisfies
+\[
+ \ell_ez_e=B+B(\widehat S_e/z_e)^{\alpha_{\rm b}},\qquad
+ \Psi_e\ge\beta_e(z_e)-(1+\eta)/2.
+\]
+The second inequality follows from
+$a\theta(a)-\phi(a)\le1/2$ and $0<\ell_e/L_e\le1$.
+Because $z_e\le\sigma_e\le S_{\max}$, the logarithmic part of
+$\beta_e(z_e)$ is nonnegative. Therefore
+\[
+ Z\le Bm+\alpha_{\rm b}[D+(1+\eta)m/2].
+\]
+Substitute this bound and use $\gamma/\beta_0\le1/2$ and
+$\zeta\le1/4$. All remaining terms proportional to $m$ are bounded
+by $2(1+\eta)m$, giving \eqref{eq:recovery-complementarity}.
+\end{proof}
+
+The previously proved endpoint floor gives $V_{\rm cap}=O(M)$.
+The anchor rule must bound $E_p=pE(x)$; a bound on $E(x)$ alone loses
+the factor $p$. Keeping the barrier references fixed is equally
+essential to the displayed bound for $Z$.
+
+\begin{theorem}[Phase contraction with explicit dependencies]
+\label{thm:recovery-phase-contraction}
+Assume the sublevel, endpoint-floor, and anchor bounds of
+Lemma~\ref{lem:recovery-complementarity}, with $0<\kappa\le1/4$ and
+$0<\alpha_{\rm b}\le1$.
+Suppose $D,K_a\le C_aK$, where $C_a\ge1$ is the fixed constant from
+the sublevel and anchor analyses. Let $0<\varepsilon\le1/4$.
+It suffices for recovery to require
+\begin{equation}\label{eq:recovery-clean-tolerances}
+ \tau_s\le\kappa/64,\qquad
+ \tau_x\le\min\left\{\frac{\kappa}{64L_x},
+                  \frac{\varepsilon q_{\kappa,-}}{8\Lambda}\right\},
+ \qquad
+ b_0q_{\kappa,-}\ge\frac{8(\eta+2)}\varepsilon.
+\end{equation}
+Then constructive recovery gives an exactly feasible nonnegative flow
+whose certified gap, divided by the gap at the start of the phase, is
+at most
+\begin{equation}\label{eq:recovery-contraction-factor}
+ \frac{4A_*}{K}
+ +C_a\left(2\alpha_{\rm b}
+       +\frac{16\eta}{b_0q_{\kappa,-}}+2\varepsilon\right).
+\end{equation}
+In particular, taking $K\ge100A_*$ and
+$\alpha_{\rm b},\varepsilon\le1/(100C_a)$ makes this factor less
+than $1/4$. All required inverse tolerances are polynomial in
+$b_0,X,\kappa^{-1},\eta^{-1},q_{\kappa,-}^{-1}$ for constant
+$\varepsilon$ and $C_a$.
+\end{theorem}
+
+\begin{proof}
+The tolerances give $\delta_s\le\kappa/32$, $\zeta\le1/4$, and
+$\gamma\le\varepsilon\beta_0/8\le\beta_0/32$.
+They also imply $\beta_0\ge16\eta$. The correction radius in
+\eqref{eq:recovery-radius} is at most $\varepsilon/4$; the known-radius construction returns a correction of norm at most
+$3r_*/2<\varepsilon$. Even the numerical allowance $2r_*$ is less
+than $\varepsilon$. Use that $\varepsilon$ in
+\eqref{eq:recovery-flow-formula}. Combine
+\eqref{eq:recovery-gap-formula} with
+\eqref{eq:recovery-complementarity}, $W_\sigma\le D$, and
+$D,K_a\le C_aK$, and divide by $K/\lambda=\Delta_{\rm start}$.
+This gives \eqref{eq:recovery-contraction-factor}.
+For the stated parameter choice, its first term is at most $4/100$.
+The recovery condition implies
+$16\eta/(b_0q_{\kappa,-})\le2\varepsilon$, so the remaining terms
+are at most $6/100$. The sum is below $1/4$.
+\end{proof}
+
+The theorem isolates the purpose of each parameter. The phase budget
+dominates the vertex and displacement energies; the small power exponent
+makes the root-barrier contribution a small fraction of that budget;
+the large displacement scale makes the remaining Huber contribution
+small. Stationarity controls the correction and pays for its exact
+construction through a separate static solve.
+
+
+% Replacement dynamic-maintenance section; uses the main theorem/lemma
+% environments and requires amsmath, amssymb, amsthm, array.
+
+\section{Maintaining the two gradients by ordinary cut updates}
+\label{sec:maintenance}
+
+The optimization variables are the two additive fields
+$s=\log(q/a_0)$ and $x=D_q^{-1}(y-a)$. A step adds a constant to one field on
+one implicit tree cut. The implementation stores neither field as an
+explicitly updated vertex array. Instead, it stores their tree
+representations and a cache of complete row contributions.
+The following argument applies between anchor resets, with $a,w$ and
+the barrier references fixed. An anchor reset refreshes every row and
+vertex; its $O(M)$ evaluations are charged separately by the reset
+analysis.
+
+There are two questions to answer. First, how much can a row's gradients
+change while its cache is stale? Second, how do we detect that change
+without scanning the vertices or edges of the updated cut? The same
+small grounded graph answers both questions.
+
+\subsection{The local graph and the snapshots it stores}
+
+For a two-ended row, keep its given sign and write
+\[
+ A_e=a_e e_u^{\mathsf T}-b_e e_v^{\mathsf T},\qquad a_e,b_e>0.
+\]
+Its owner is its positive endpoint $u$. At the current state, put
+\[
+ C_e=Q_e e_u^{\mathsf T}-R_e e_v^{\mathsf T},\quad
+ Q_e=L_ea_eq_u^{1-\kappa},\quad
+ R_e=L_eb_eq_vq_u^{-\kappa},\quad
+ L_e=\ell_e+w_e,
+\]
+and recall $r_e=C_e\mathbf1$ and $t_e=C_ex/b_0$. Define
+\begin{equation}
+ n_e(z)=2\left[
+ R_e|z_u-z_v|+(1+|r_e|+|t_e|)|z_u|+|z_v|
+ \right].
+ \label{maint:localnorm}
+\end{equation}
+Thus one row is represented by three ordinary arcs: an edge $uv$, an
+edge from $u$ to ground, and an edge from $v$ to ground. The factor two
+will make the comparison with the earlier proxy exact in one direction.
+
+For a unary row $C_e=\pm Q_e e_u^{\mathsf T}$, use
+$n_e(z)=2(1+|r_e|+|t_e|)|z_u|$. This convention covers both unary signs;
+there is no sign change in the physical matrix.
+
+The vertex part of the forcing is
+\[
+ v_i=\omega_i\left[1+a_0/q_i+(x_i/b_0)^p\right].
+\]
+The \emph{true} ordinary graph norm used in this section is
+\begin{equation}
+ \mathcal P(z)=\sum_e n_e(z)+\sum_i v_i|z_i|.
+ \label{maint:trueproxy}
+\end{equation}
+It has $O(m+n)$ arcs. Its frozen version
+$\widehat{\mathcal P}$ has the same arc identifiers, but each row's
+three capacities come from that row's last refresh, and each vertex
+capacity comes from that vertex's last refresh. Different rows can
+therefore have different snapshot times.
+
+A row refresh is one synchronized operation. It queries
+$s_u,s_v,x_u,x_v$ at the current state, solves that row's scalar
+equation, and replaces \emph{both} coordinate-gradient contributions
+and \emph{all} of that row's graph capacities. The row's motion
+counters in both fields are then reset. Independent updates of the two
+endpoint coefficients would not provide the error bound below.
+
+\subsection{One local estimate controls curvature and cache error}
+
+The following notation is confined to this proof. Suppress the row
+index and set
+\[
+ k=q_u^\kappa\frac{\ell-w}{\ell+w}
+       +\frac{\eta}{b_0}\theta(t),\qquad
+ F=r\theta(r)+\eta t\theta(t).
+\]
+Including the row's share $-wA_ey$ of the linear objective, its two
+actual coordinate gradients are the row vectors
+\begin{equation}
+ g_{x,e}=kC_e,\qquad
+ G_{s,e}=\theta(r)C_e+kC_eD_x-\kappa F e_u^{\mathsf T}.
+ \label{maint:rowgradients}
+\end{equation}
+In particular, $G_{s,e}$ is the derivative with $x$ fixed, not the
+fixed-$y$ scaling derivative.
+
+\begin{lemma}[Local variation of a complete row]
+\label{maint:local}
+Suppose the phase ranges give
+\[
+ |x_i|\leq X,\qquad q_i^\kappa\leq q_{\kappa,+},\qquad
+ b_0\geq1,\quad 0<\kappa\leq1,\quad 0<\eta\leq1,
+\]
+and write
+$d_0=B/(1+\alpha_{\rm b})-1-\eta>0$.
+There is a universal polynomial
+\[
+ K_{\rm loc}=
+ \operatorname{poly}(1+X+b_0+q_{\kappa,+}+d_0^{-1}+p)
+\]
+such that, along every smooth path in the finite-envelope domain,
+\begin{align}
+ |d(g_{x,e}z)|+|d(G_{s,e}z)|
+   &\leq K_{\rm loc}
+          [n_e(ds)+n_e(dx)]n_e(z),
+             \label{maint:rowlipschitz}\\
+ |dn_e(z)|
+   &\leq K_{\rm loc}
+          [n_e(ds)+n_e(dx)]n_e(z).
+             \label{maint:normlipschitz}
+\end{align}
+The constants do not depend on the sizes of $Q_e,R_e,L_e$.
+\end{lemma}
+
+\begin{proof}
+All derivatives below exist almost everywhere, which is sufficient for
+the integrated inequalities. Write $m=n_e(ds)+n_e(dx)$.
+The row split and a second, equally useful identity give
+\begin{align}
+ |C_ez|&\leq n_e(z),\nonumber\\
+ C_eD_xz&=x_vC_ez+(C_ex-rx_v)z_u,
+ \qquad
+ |C_eD_xz|\leq(2X+b_0)n_e(z).
+ \label{maint:multiplier}
+\end{align}
+We first derive the scalar transport estimate used here. Let
+$\zeta(\ell)=(-\beta'_e)^{-1}(\ell)$ and write the root as
+\[
+ \mathcal F(\ell,r^0,t^0,\sigma)
+ =\zeta(\ell)+r^0\theta((\ell+w)r^0)
+       +\eta t^0\theta((\ell+w)t^0)-\sigma=0.
+\]
+The barrier identities $\ell\zeta\geq B$ and
+$\beta''_e(\zeta)\leq(1+\alpha_{\rm b})\ell/\zeta$ give
+$-\zeta'(\ell)\geq B/((1+\alpha_{\rm b})\ell^2)$. An active Huber
+curvature contributes at most $1/L^2$ or $\eta/L^2$. Hence
+\[
+ -\mathcal F_\ell\geq d_0/\ell^2,\qquad
+ |\mathcal F_{r^0}|\leq2,\qquad
+ |\mathcal F_{t^0}|\leq2\eta.
+\]
+Implicit differentiation, using $dL=d\ell$ and $\ell\leq L$, proves
+\begin{equation}
+ |d\log L|\leq\frac L{d_0}
+       (|d\sigma|+2|dr^0|+2\eta|dt^0|).
+ \label{maint:scalartransport}
+\end{equation}
+Here $r^0=r/L$, $t^0=t/L$, and, with the anchor and baseline fixed,
+\[
+ \begin{aligned}
+ Ld\sigma&=-q_u^\kappa C_e(x\odot ds+dx),\\
+ Ldr^0&=C_e ds-\kappa r\,ds_u,\\
+ Ldt^0&=C_e(x\odot ds+dx)/b_0-\kappa t\,ds_u.
+ \end{aligned}
+\]
+Equations \eqref{maint:multiplier}--\eqref{maint:scalartransport}
+therefore imply $|d\log L|\leq K_1m$, with $K_1$ a polynomial in the
+displayed range parameters.
+
+The remaining derivative calculation has three parts. The table states
+the bounds needed in each part; $K_2,K_3$ denote universal polynomials
+in the same parameters.
+\[
+\begin{array}{c|l}
+ \text{quantity}&\text{bound}\\ \hline
+ r,t&
+ |dr|\leq[1+K_2|r|]m,\quad
+ |dt|\leq[K_2+K_2|t|]m\\[2pt]
+ R,\ 1+|r|+|t|&
+ |d\log R|\leq K_2m,\quad
+ |d(1+|r|+|t|)|\leq K_2(1+|r|+|t|)m\\[2pt]
+ k,\ \theta(r),\ \kappa F&
+ |k|\leq K_3,\quad |dk|+|d\theta(r)|\leq K_3m,\quad
+ |d(\kappa F)z_u|\leq K_3m\,n_e(z).
+\end{array}
+\]
+For the first line use
+\[
+ dr=C_e ds+r(d\log L-\kappa ds_u),\qquad
+ dt=C_e(x\odot ds+dx)/b_0+t(d\log L-\kappa ds_u).
+\]
+The second line follows from the first and
+$d\log R=d\log L+ds_v-\kappa ds_u$.
+For the last line, $|(\ell-w)/L|\leq1$ and
+$|d((\ell-w)/L)|\leq2|d\log L|$. Moreover, $d\theta(t)$ vanishes
+outside $|t|\leq1$, and similarly for $d\theta(r)$. Finally,
+$|d(z\theta(z))|\leq2|dz|$, and the ground coefficient in
+\eqref{maint:localnorm} pays the resulting $1+|r|+|t|$ factor.
+
+It remains to differentiate the two row vectors. Put
+$\beta=d\log L+(1-\kappa)ds_u$. The exact identities are
+\begin{align}
+ dC_e&=\beta C_e+R(ds_u-ds_v)e_v^{\mathsf T},\nonumber\\
+ d(C_eD_x)&=\beta C_eD_x+dx_uC_e
+   +R[x_v(ds_u-ds_v)+(dx_u-dx_v)]e_v^{\mathsf T}.
+ \label{maint:rowtransport}
+\end{align}
+Their last terms are weighted by $R$, the ordinary-edge capacity in
+$n_e$. Thus both derivatives, tested against $z$, are bounded by a
+polynomial times $m n_e(z)$. Inserting the table and
+\eqref{maint:rowtransport} into \eqref{maint:rowgradients} proves
+\eqref{maint:rowlipschitz}. The second line of the table proves
+\eqref{maint:normlipschitz}. For unary rows the $R$ terms are absent,
+so the proof is shorter.
+\end{proof}
+
+The vertex terms satisfy the same type of estimate. In actual
+coordinates they are
+\[
+ G_{s,i}^{\rm vert}=-\omega_i(1+a_0/q_i),\qquad
+ g_{x,i}^{\rm vert}=\frac{\omega_i}{b_0}(x_i/b_0)^{p-1}.
+\]
+Direct differentiation gives
+\begin{equation}
+ \begin{aligned}
+ |dG_{s,i}^{\rm vert}|&\leq v_i|ds_i|,\\
+ |dg_{x,i}^{\rm vert}|&\leq p v_i|dx_i|,\\
+ |dv_i|&\leq p v_i(|ds_i|+|dx_i|).
+ \end{aligned}
+ \label{maint:vertexvariation}
+\end{equation}
+Here we used $|z|^{p-2},|z|^{p-1}\leq1+|z|^p$ and $b_0\geq1$.
+
+\subsection{Global bounds, including the proxy factors}
+
+Recall the earlier proxy $N(z)=\rho(z)+h^{\mathsf T}|z|$, where
+\[
+ \rho(z)=\sum_e[R_e|z_u-z_v|+|r_e||z_u|],\qquad
+ h_i=v_i+\kappa\sum_{e:u_e=i}F_e.
+\]
+At every state, independently of stationarity,
+\begin{equation}
+ N(z)\leq\mathcal P(z)\leq A_N N(z),\qquad
+ A_N=8+4/(\kappa\eta).
+ \label{maint:proxycomparison}
+\end{equation}
+For the first inequality use
+$\kappa r\theta(r)\leq|r|$ and
+$\kappa\eta t\theta(t)\leq|t|$; the factor two in $n_e$ pays the
+second copy of the row-imbalance weight. For the other inequality,
+\[
+ \sum_{e:u_e=i}|t_e|
+ \leq\frac{h_i}{\kappa\eta}+\frac{\deg_A(i)}4.
+\]
+This follows from $|t|\leq t\theta(t)+1/4$. All remaining unit endpoint
+weights are paid by $v_i\geq\omega_i\geq64\deg_A(i)+1$.
+
+Summing Lemma~\ref{maint:local} and
+\eqref{maint:vertexvariation} yields, after increasing $K_{\rm loc}$,
+\begin{align}
+ |d(g_xz)|+|d(G_sz)|
+   &\leq K_{\rm loc}
+      [\mathcal P(ds)+\mathcal P(dx)]\mathcal P(z),
+                  \label{maint:globalvariation}\\
+ |d\mathcal P(z)|
+   &\leq K_{\rm loc}
+      [\mathcal P(ds)+\mathcal P(dx)]\mathcal P(z).
+                  \label{maint:globalnormvariation}
+\end{align}
+For the vertex part use $v_i\geq1$, so that
+$v_i|a_i||z_i|\leq(v_i|a_i|)(v_i|z_i|)$.
+In particular, along a step in either coordinate with direction $z$,
+\begin{equation}
+ \left|\frac{d^2}{d\nu^2}\Phi\right|
+       \leq K_{\rm loc}\mathcal P(z)^2
+ \label{maint:curvature}
+\end{equation}
+almost everywhere. This is the curvature estimate used by cut descent.
+It does not assume the endpoint reverse norm comparison.
+
+\subsection{Why frozen motion is enough}
+
+Suppose row $e$ was refreshed at time $a$. Measure its subsequent motion
+using its \emph{frozen} norm:
+\[
+ \mu_e^0(b)=\int_a^b[n_e^a(ds)+n_e^a(dx)].
+\]
+If $K_{\rm loc}\mu_e^0(b)\leq1/4$, then
+\begin{equation}
+ \frac12 n_e^b(z)\leq n_e^a(z)\leq2n_e^b(z),\qquad
+ |(g_{x,e}^b-g_{x,e}^a)z|
+ +|(G_{s,e}^b-G_{s,e}^a)z|
+ \leq4K_{\rm loc}\mu_e^0(b)n_e^b(z).
+ \label{maint:frozentransport}
+\end{equation}
+To prove this, let $\mu_e$ denote motion in the changing norm. Equation
+\eqref{maint:normlipschitz} gives
+$n_e^t(z)\leq e^{K_{\rm loc}\mu_e(t)}n_e^a(z)$, hence
+\[
+ d\mu_e\leq e^{K_{\rm loc}\mu_e}d\mu_e^0,
+ \qquad
+ \mu_e\leq-\frac{\log(1-K_{\rm loc}\mu_e^0)}{K_{\rm loc}}
+       \leq2\mu_e^0.
+\]
+Integrating the gradient estimate proves
+\eqref{maint:frozentransport}. The same argument applied to
+\eqref{maint:vertexvariation} controls a vertex snapshot after
+coordinate motion $\int(|ds_i|+|dx_i|)\leq\tau$.
+
+Consequently, if every unrefreshed row and vertex has frozen motion at
+most $\tau$, with $K_{\rm loc}\tau\leq1/4$, then
+\begin{equation}
+ \tfrac12\mathcal P\leq\widehat{\mathcal P}\leq2\mathcal P,
+ \qquad
+ |(\widehat g_x-g_x)z|+|(\widehat G_s-G_s)z|
+       \leq C K_{\rm loc}\tau\mathcal P(z).
+ \label{maint:cachecertificate}
+\end{equation}
+This statement allows different snapshot times for every row and
+vertex. Each term is compared with its own current contribution before
+the terms are summed.
+
+There are two useful readings of this certificate. Relative to the
+maintained graph the gradient error is at most
+$2C K_{\rm loc}\tau\widehat{\mathcal P}(z)$. Relative to the earlier
+proxy $N$ it is at most $C K_{\rm loc}\tau A_NN(z)$. Thus a target
+error $\epsilon$ in the $N$-dual norm is obtained by choosing
+\begin{equation}
+ \tau\leq\min\left\{\frac1{16K_{\rm loc}},
+              \frac{\epsilon}{C'K_{\rm loc}A_N}\right\}.
+ \label{maint:threshold}
+\end{equation}
+The proxy conversion factor must be included in this choice.
+
+\subsection{Two ordinary structures and their motion counters}
+
+Use two independent copies of the published ordinary cut structure.
+The first stores additive field $s$ and cached gradient $\widehat G_s$;
+the second stores field $x$ and cached gradient $\widehat g_x$. Both
+contain the same frozen graph $\widehat{\mathcal P}$, but their tree
+sparsifiers and implicit cuts may differ. A step uses a cut from one
+copy, updates only that copy's field, and notifies only its motion
+detector. A refresh queries both copies and changes the affected graph
+arcs and gradient entries in both copies. There is no transfer of an
+arbitrary cut to an unrelated tree.
+
+Both fields are pinned at ground. Equivalently, a field query returns
+the stored potential at $i$ minus its stored potential at ground. If a
+returned cut contains ground, use its complement and reverse the signed
+step. This leaves the prescribed physical update unchanged and removes
+the ordinary potential representation's irrelevant additive constant.
+
+The ordinary interfaces are those of the tree-cut sparsifier,
+directed-layer graph, and accumulated-motion detector in
+van den Brand et al., arXiv:2407.10830v1, Definitions 4.2, 5.2, 5.7 and
+Theorem 5.8. The dependency graph gives a superset of the edges crossing
+the selected tree cut, of capacity at most $\chi$ times its true
+ordinary cut capacity. The detector reports all counters reaching their
+threshold, and reports only after an overestimated counter has reached
+the threshold divided by its approximation factor $\Gamma$.
+
+For each of a row's three arcs, keep one counter in each field. If an
+arc has frozen capacity $c$, its counter measures $c$ times accumulated
+absolute endpoint-difference motion; its threshold is $\tau/6$.
+Equivalently, the significance parameter passed to the published
+unweighted-motion interface is $\tau/(6c)$. All six counters share the
+row's snapshot time. If any counter reports, refresh that complete row
+and reset all six. A row that does not report has $\mu_e^0\leq\tau$,
+as required by \eqref{maint:cachecertificate}.
+
+For vertex $i$, its forcing arc has capacity $\widehat v_i\geq1$.
+Use the significance threshold $\tau/(2p)$ in each field, measuring the
+unweighted motions of $s_i$ and $x_i$. A report refreshes both vertex
+gradient entries and $v_i$, at a single current state, and resets both
+counters. If neither counter reports, their total true coordinate
+motion is at most $\tau/p$. Thus the factor $p$ in
+\eqref{maint:vertexvariation} is absorbed directly in the vertex
+threshold. These are unit coordinate-motion counters; they can be
+implemented on the forcing arc without adding another graph arc.
+
+Process reports and finish their coupled refreshes before using another
+cached gradient. For the line search, cap each step's normalized
+length $|\nu_j|u_j$ by $\tau/(8p)$. Before a
+report is processed, its old interval can then exceed the cache radius
+by at most this increment. In particular, the smaller vertex radius
+$\tau/p$ cannot be crossed by a step of size comparable to $\tau$.
+The same frozen-transport argument, with a constant margin, remains
+valid throughout the step.
+
+\subsection{Report count and total work}
+
+Let update $j$ have signed size $\nu_j$ and cut $S_j$, in whichever
+field owns that step. Let $u_j$ be its certified upper bound on
+$\widehat{\mathcal P}(\mathbf1_{S_j})$, and define
+\begin{equation}
+ \mathcal V=\sum_j|\nu_j|u_j.
+ \label{maint:totalmotion}
+\end{equation}
+The total weighted counter increment at update $j$ is at most
+$\chi|\nu_j|u_j$. Every row report consumes at least
+$\tau/(6\Gamma)$ of this increment. Every vertex report consumes at
+least $\widehat v_i\tau/(2p\Gamma)\geq\tau/(2p\Gamma)$.
+Resets performed early, including the other five counters of a reported
+row, only discard accumulated motion. Charging each report to the
+motion it consumes therefore gives
+\begin{equation}
+ D_{\rm reports}=O(\Gamma\chi p\mathcal V/\tau).
+ \label{maint:reportbound}
+\end{equation}
+This is a bound by normalized movement, not by the number of vertices
+in an update. In particular, it covers edges internal to a scaling cut
+because their owner or endpoint arcs cross ground.
+
+Each report causes $O(1)$ ordinary arc changes, field queries, detector
+resets, and paired vertex-gradient changes. Ground receives the negative
+sum of physical gradient changes, preserving the zero-sum convention of
+the ordinary interface. The two independent structures incur only a
+constant replication cost. If capacities span more than a polynomial
+range, use the published capacity-level decomposition; its number of
+levels is polynomial in the certified logarithmic range. All these
+ordinary work and approximation factors can be collected into a factor
+$Q^{O(1)}\operatorname{poly}(H)$.
+
+There is no circular maintenance assumption in the resulting bound.
+For $J$ cut steps and $D_{\rm reports}$ reports, the published
+output-sensitive ordinary algorithms take
+\[
+ (M+J+D_{\rm reports})Q^{O(1)}\operatorname{poly}(H)
+\]
+work, in addition to row evaluation at reports. Each row evaluation
+uses its scalar root and $O(1)$ endpoint values. Equation
+\eqref{maint:reportbound} bounds the reports independently by $\mathcal V$.
+For several fixed-anchor intervals, add their initialization and reset
+costs; this is $O(M)$ evaluations per interval.
+Finally the descent estimate bounds $\mathcal V$: if a chosen cached ratio is
+at least twice the error in
+\eqref{maint:cachecertificate}, the true directional derivative has the
+same sign and at least half its magnitude. Equations
+\eqref{maint:curvature} and \eqref{maint:cachecertificate} then justify
+a sufficiently small normalized step and charge its $|\nu_j|u_j$ to
+potential decrease. The global phase analysis supplies the resulting
+bound on $\mathcal V$.
+
+
+
+\section{The phase algorithm and its work bound}\label{sec:descent}
+
+\subsection{A small set of inequalities replaces the large step exponents}
+
+Let $A_N$ be the all-state comparison factor in
+\eqref{maint:proxycomparison}, and increase $K_{\rm loc}$ so it also
+dominates all vertex and frozen-motion constants. Let $Q=M^{o(1)}$
+dominate ordinary cut quality, detector distortion, and structural
+recourse factors. A fixed power of $Q$ can be absorbed into this notation.
+Choose the target endpoint norm tolerance $\epsilon_s=H^{-100}$ and set
+\begin{equation}\label{eq:algorithm-scales}
+ \tau=\frac{\epsilon_s}{10A_N},\qquad
+ r_{\rm cache}=\frac{\tau}{100QK_{\rm loc}},\qquad
+ \zeta=\frac{r_{\rm cache}}{8p}.
+\end{equation}
+The first converts a proxy-norm certificate into the desired $N$-norm
+certificate. The second controls stale-row errors. The third prevents
+one discrete step from jumping across a row or vertex cache interval.
+All inverse scales are $Q^{O(1)}\poly(H)$.
+Apply the maintenance estimates of Section~\ref{sec:maintenance} with
+their local cache-radius parameter $\tau$ equal to $r_{\rm cache}$.
+In this section $\tau$ always denotes the stopping tolerance in
+\eqref{eq:algorithm-scales}.
+
+\subsection{One cut step, with a quantitative decrease}
+
+Extend a gradient to ground by the negative sum of its physical entries.
+Its total is zero. The ordinary cut structure returns an implicit cut
+$S$, its cached gradient sum $g_S\le0$, and a certified upper bound $u$
+on its frozen proxy cut capacity. Its ratio approximates the largest
+gradient-to-proxy ratio to within $Q$.
+
+If $|g_S|/u>\tau/Q$, take a step of the descent sign in that field,
+with dyadic size between one half and one times
+\begin{equation}\label{eq:normalized-step}
+ \nu=\zeta/u.
+\end{equation}
+Read all endpoint values needed by reports and finish all refreshes
+before the next oracle use. Unreported rows have stable frozen norms;
+even during the step, overshoot is at most a small fraction of the cache
+radius. Thus $\mathcal P(\one_S)\le2u$ along the step.
+The cached directional error is at most $\tau u/(10Q)$, and the
+directional second derivative is at most $4K_{\rm loc}u^2$.
+The chosen scales imply
+\begin{equation}\label{eq:decrease}
+ \Phi_{\rm before}-\Phi_{\rm after}
+ \ge \frac{\tau}{4Q}|\nu|u
+ \ge\frac{\tau\zeta}{8Q}.
+\end{equation}
+Indeed the linear decrease is at least $\tau|\nu|u/(2Q)$, and the
+quadratic remainder is at most $2K_{\rm loc}\nu^2u^2$.
+The inequality $\zeta\le\tau/(100QK_{\rm loc})$ pays that remainder.
+
+If both structures return ratios at most $\tau/Q$, their approximation
+and cache bounds give gradient dual norms at most $3\tau$ in
+$\mathcal P$, and at most $3A_N\tau<\epsilon_s$ in $N$.
+These are the actual coordinate-gradient certificates required in the
+endpoint theorem.
+
+The finite domain is preserved by continuation. Apply the estimates up
+to the first exit from either the finite domain or the phase sublevel
+and its certified range bounds. The decrease just proved prevents a
+sublevel exit, and the range lemma then prevents a range exit. If a
+first domain boundary contact occurred, the integrated local estimates
+would keep $L_e$ and
+the row metric within bounded factors of their cached values up to
+that contact. At the boundary $\sigma_e=|r_e^0|+\eta|t_e^0|$, the
+scalar maximizer must instead diverge. This contradiction justifies
+using the local estimates throughout an admissible step.
+
+\subsection{A reset caps displacement energy and pays for its rebuild}
+
+Scaling steps leave $E(x)$ fixed. Along displacement steps,
+\[
+ |dE|\le b_0^{-1}\sum_i v_i|dx_i|\le b_0^{-1}\mathcal P(dx).
+\]
+Track normalized motion and scan all coordinates whenever it reaches
+$M/4$ since the previous scan. Cache stability and the step cap ensure
+the energy can change by at most $M$ between scans. If a scan finds
+$E\ge M$, set $a\leftarrow y$, $x\leftarrow0$, and rebuild both
+structures at the unchanged physical $y,q$. The barrier references,
+$w$, and $\lambda$ stay fixed.
+
+Removing the displacement Huber term from every row cannot increase
+its supremum; removing $E$ decreases the potential by at least $M$.
+Thus $E\le3M$ whenever an endpoint is tested and
+$E_p=pE\le3pM$. Each reset costs $MQ^{O(1)}\poly(H)$ and is paid
+by a decrease of $M$. A scan that does not reset is paid by the
+intervening motion. Rounded resets retain at least half this decrease,
+as shown in Appendix~\ref{app:numerics}.
+
+\subsection{Parameters, ranges, and phase progress}
+
+One admissible choice is
+\begin{equation}\label{eq:parameter-choice}
+ \alpha_{\rm b}=H^{-2},\quad a_0=2^{-H^8},\quad
+ \kappa=H^{-9},\quad b_0=H^2,\quad K=MH^{12},\quad p=40H.
+\end{equation}
+The constants in $H$ can be increased once. The purposes of the choices
+are easier to see than their exponents:
+\begin{center}
+\begin{tabular}{p{.24\linewidth}p{.66\linewidth}}
+\toprule
+Parameter & Required effect\\\midrule
+$\alpha_{\rm b}$ & Makes $\alpha_{\rm b}D$ a small fraction of $K$.\\
+$a_0,\kappa$ & Give $q_i>a_0$ at termination while keeping
+$q_i^\kappa$ between constants throughout descent.\\
+$p,b_0$ & Give $|x_i|=O(b_0)$ and a small weighted correction.\\
+$K$ & Dominates the $O(M)$ vertex forcing and the capped $O(pM)$
+displacement energy, as well as the sublevel offset.\\
+\bottomrule
+\end{tabular}
+\end{center}
+The initialization lemma with $\epsilon=H^{-4}$ and the range induction
+in Appendix~\ref{sec:paired-unary-ranges} give
+\[
+ D=K+O(MH^8)\le2K,\quad K_a\le2K,\quad
+ q_{\kappa,-}\ge1/2,\quad q_{\kappa,+}\le2,\quad |x_i|\le3b_0.
+\]
+The endpoint floor gives $V\le2\Omega$; the resets give
+$E_p\le3pM$. The contraction factor in
+\eqref{eq:recovery-contraction-factor} is then at most a constant
+times $H^{-2}+H^{-11}+\varepsilon$. Take, for example,
+$\varepsilon\le1/(100C_a)$ and reserve half of it for numerical
+corrections. The factor is below $1/4$ after a fixed enlargement of $H$.
+The recovered flow is the next baseline and the current dual vector is
+the next phase anchor. Thus $O(H)$ phases reach the internal target.
+
+\subsection{Every operation is charged}
+
+Let $\mathcal V=\sum_j|\nu_j|u_j$ within a phase. The potential has
+an initial-to-lower-bound budget $O(D)$. By \eqref{eq:decrease},
+\[
+ \mathcal V=O(QD/\tau),\qquad
+ N_{\rm steps}=O(QD/(\tau\zeta)).
+\]
+The detector report estimate gives
+$Q^{O(1)}p\mathcal V/r_{\rm cache}$ reports, each requiring only
+$Q^{O(1)}\poly(H)$ work and constantly many graph mutations.
+Scans cost $O(\mathcal V+M)$ evaluations. Resets number $O(D/M)$.
+Static recovery and phase initialization have the same near-linear
+bound. Since $D=M\poly(H)$ and all inverse scales in
+\eqref{eq:algorithm-scales} are $Q^{O(1)}\poly(H)$, total work over
+all phases is $MQ^{O(1)}\poly(H)=M^{1+o(1)}\poly(H)$.
+
+Use deterministic ordinary cut structures. For randomized endpoint
+preconditioners, choose per-phase failure at most $(M^{10}H)^{-1}$.
+This is obtained by stacking $O(\log(MH))$ independent normalized
+cut preconditioners: each always gives a valid congestion lower bound,
+and one successful copy gives the required upper approximation.
+The extra factor is $\poly(H)$, and a union bound over $O(H)$ phases
+gives the stated high-probability guarantee even when $H$ is large.
+
+\appendix
+
+
+\section{Ranges, initialization, and the endpoint scaling floor}
+\label{sec:paired-unary-ranges}
+
+Let $C_0\ge\max\{1,\max_e|c_e|\}$ and
+$A_{\rm row}=\max_e\|A_e\|_1$.  Take
+$S_{\max}=C_0(1+A_{\rm row})$.  Recall that every coordinate has
+both signed unit unary rows.  Define
+\[
+ q_{\max}=C_0^{1/(1-\kappa)},\qquad \Omega=\sum_i\omega_i.
+\]
+We use $0<\kappa\le1/2$ and $0<a_0\le1$.
+
+\begin{lemma}[What a potential bound controls]
+\label{lem:sublevel-ranges}
+If $\Phi_a(y,q)\le P$, set $D=P+\Omega\log(q_{\max}/a_0)$.
+Then $|y_i|<C_0$, $q_i<q_{\max}\le C_0^2$, and
+\begin{equation}\label{eq:positive-budget}
+ \lambda(F-d^\top y)+\sum_e\Psi_e
+       +\sum_i\frac{\omega_i a_0}{q_i}+E(x)\le D.
+\end{equation}
+All four terms on the left are nonnegative.  Consequently,
+\begin{equation}\label{eq:lower-q-range}
+ q_i\ge\frac{\omega_i a_0}{D},\qquad
+ |x_i|\le b_0(pD/\omega_i)^{1/p}.
+\end{equation}
+Let $J_D=\max\{1,\alpha_{\rm b}(D+c_\eta)/B\}$.  The row ranges are
+\begin{align}
+ \sigma_e-b_e&\ge\widehat S_eJ_D^{-1/\alpha_{\rm b}},
+ \label{eq:finite-domain-margin}\\
+ \frac B{S_{\max}}\le\ell_e
+ &\le\frac{2B}{\widehat S_e}J_D^{1+1/\alpha_{\rm b}},
+ \label{eq:ell-range}\\
+ Z:=\sum_e\ell_ez_e&\le Bm+\alpha_{\rm b}D+\alpha_{\rm b}mc_\eta.
+ \label{eq:root-moment}
+\end{align}
+For fixed phase data and a fixed anchor, nonempty sublevels are compact
+and contained in the finite domain.
+\end{lemma}
+
+\begin{proof}
+The unary slacks are $c_{i,+}-y_i$ and $c_{i,-}+y_i$.  Positivity
+implies $|y_i|<C_0$.  Each exceeds $q_i^{1-\kappa}$, while their sum
+is at most $2C_0$, so $q_i^{1-\kappa}<C_0$.  Every other feasible
+slack is at most $|c_e|+C_0\|A_e\|_1\le S_{\max}$.
+Equation~\eqref{eq:barrier-lower} therefore implies $\Psi_e\ge0$.
+Primal feasibility gives
+\[
+ \lambda(F-d^\top y)=\sum_e w_e\sigma_e\ge0.
+\]
+Also $R(q)\ge\sum_i\omega_i a_0/q_i-
+\Omega\log(q_{\max}/a_0)$.  These observations prove the positive
+budget and the coordinate bounds.
+
+The sandwich gives $\beta_e(\sigma_e-b_e)\le D+c_\eta$;
+the root-value bound gives $\beta_e(z_e)\le D+c_\eta$.
+Both arguments of $\beta_e$ are at most $S_{\max}$, so its logarithmic
+term is nonnegative.  The power term yields
+$\sigma_e-b_e\ge\widehat S_eJ_D^{-1/\alpha_{\rm b}}$ and
+$z_e\ge\widehat S_eJ_D^{-1/\alpha_{\rm b}}$.
+Substitution into \eqref{eq:barrier-inverse} proves the upper bound
+on $\ell_e$; $z_e\le\sigma_e\le S_{\max}$ proves the lower bound.
+Finally,
+\[
+ \ell_ez_e=B+B(\widehat S_e/z_e)^{\alpha_{\rm b}}
+ \le B+\alpha_{\rm b}\beta_e(z_e)
+ \le B+\alpha_{\rm b}\Psi_e+\alpha_{\rm b}c_\eta.
+\]
+Sum this inequality to obtain the bound on $Z$.
+The coordinate bounds give a compact box with $q_i$ bounded away from
+zero.  The row margin separates its sublevel from the finite-domain
+boundary.  Continuity then makes the sublevel closed in that box.
+\end{proof}
+
+Two useful choices follow immediately.  If
+$p\ge\max\{4,2\log D\}$, then $\|x\|_\infty\le e b_0$.
+Certified bounds for the row scaling factors are
+\[
+ (a_0/D)^\kappa\le q_{u_e}^{\kappa}\le q_{\max}^{\kappa}.
+\]
+Compactness here proves existence of bounded sublevels, not an efficient
+method for finding a stationary point.
+
+\subsection{Starting a phase}
+\label{sec:range-initialization}
+
+\begin{lemma}[Initialization]
+\label{lem:range-initialization}
+Let $\widehat S_{\min}=\min_e\widehat S_e$,
+$D_1=\max\{1,\max_e|A_e\one|\}$, and
+$0<\epsilon\le1/[4(1+\alpha_{\rm b})]$.
+If $a_0^{1-\kappa}D_1\le\epsilon\widehat S_{\min}$, then
+$y=a_{\rm start}$, $q=a_0\one$, $a=a_{\rm start}$ is a finite
+initial state satisfying
+\[
+ \Phi\le\overline P:=(1+\epsilon)K
+   +B\sum_e\log\frac{S_{\max}}{\widehat S_e}
+   +\frac{mB}{\alpha_{\rm b}}+4Bm\epsilon+\Omega.
+\]
+\end{lemma}
+
+\begin{proof}
+Here $x=t^0=0$ and
+$b_e=a_0^{1-\kappa}|A_e\one|\le\epsilon\widehat S_e$.
+On $[(1-\epsilon)\widehat S_e,\widehat S_e]$ direct differentiation
+gives $-\beta'_e(z)\le4B/\widehat S_e$; use
+$(1-\epsilon)^{-1-\alpha_{\rm b}}\le e^{1/3}<2$.
+Thus the sandwich implies
+\[
+ \Psi_e\le\beta_e(\widehat S_e)+4B\epsilon+w_eb_e.
+\]
+The identity $\sum_e w_e\widehat S_e=K$ gives
+$\sum_e w_eb_e\le\epsilon K$.  The objective term is $K$,
+$R(a_0\one)=\Omega$, $E=0$, and
+$\beta_e(\widehat S_e)=B\log(S_{\max}/\widehat S_e)+B/\alpha_{\rm b}$.
+Summing proves the claim.  In particular no bound on $\max_e w_e$
+was needed to initialize the potential.
+\end{proof}
+
+\subsection{Choosing the small parameter without circularity}
+\label{sec:endpoint-scaling-floor}
+
+The sublevel bound allows $a_0/q_i$ to be large during descent.  A
+stationary endpoint rules this out.  The proof only needs the following
+simple parameter test, rather than a separate long range bootstrap.
+
+\begin{lemma}[Endpoint floor and a short parameter test]
+\label{lem:endpoint-scaling-floor}
+Use the initialization bound $\overline P$ above and put
+\[
+ D=D_0+\Omega\log(1/a_0),\qquad
+ D_0=\overline P+\Omega\log q_{\max},\qquad
+ D_{\rm col}=\max_i\sum_e|A_{ei}|.
+\]
+Suppose the initialization test holds and
+\begin{equation}\label{eq:small-a0-test}
+ \frac{D_{\rm col}(K+2B)}{\widehat S_{\min}}
+       a_0^{1-\kappa}(2D)^{2+1/\alpha_{\rm b}}\le\frac14.
+\end{equation}
+At an endpoint with potential at most $\overline P$, assume
+$g_q=C^\top\theta(r)-h$, $h_i\ge1$, and
+\[
+ |g_q^\top z|\le\delta_q N(z),\qquad
+ N(z)\le K_N\|Cz\|_1,\qquad \delta_qK_N\le1.
+\]
+Then $q_i>a_0$ for every $i$, and
+$\sum_i\omega_i(1+a_0/q_i)<2\Omega$.
+An admissible dyadic $a_0$ exists with
+\begin{equation}\label{eq:log-a0-size}
+ \log(1/a_0)=O\!\left((1+\alpha_{\rm b}^{-1})
+    \log\bigl((1+\alpha_{\rm b}^{-1})R_0\bigr)\right),
+\end{equation}
+where
+\[
+ R_0=\max\left\{4,D_0+\Omega+1,
+  \frac{D_{\rm col}(K+2B)}{\widehat S_{\min}},
+  \frac{D_1}{\epsilon\widehat S_{\min}}\right\}.
+\]
+\end{lemma}
+
+\begin{proof}
+All nonincreasing updates and anchor resets retain the positive budget
+$D$.  The phase-start identity $\sum_e w_e\widehat S_e=K$ gives
+$w_e\le K/\widehat S_{\min}$, even after a reset, since $w$ and
+$\widehat S$ stay fixed.  The root ranges imply
+\[
+ L_{\max}\le\frac{K+2B}{\widehat S_{\min}}
+                      (2D)^{1+1/\alpha_{\rm b}},
+ \qquad q_j\ge a_0/D.
+\]
+If $q_i\le a_0$, its absolute column sum is consequently at most
+\[
+ \|Ce_i\|_1
+ \le a_0^{1-\kappa}D^\kappa D_{\rm col}L_{\max}\le1/4.
+\]
+But the endpoint conditions give
+$h_i\le\|Ce_i\|_1+|g_{q,i}|
+\le(1+\delta_qK_N)\|Ce_i\|_1\le1/2$, contradicting $h_i\ge1$.
+This proves the floor and its sum bound.  The norm comparison used
+here is the endpoint certificate proved later; its proof does not use
+this floor, so there is no circularity.
+
+For an explicit choice, let $d=2+\alpha_{\rm b}^{-1}$,
+$U_0=16dR_0$, and
+$a_0=2^{-\lceil16d\log_2U_0\rceil}$.
+Then $a_0\le U_0^{-16d}$ and
+$D\le R_0(1+16d\log U_0+\log2)\le2U_0^2$.
+The initialization test follows from $\kappa\le1/2$ and
+$R_0\ge D_1/(\epsilon\widehat S_{\min})$.
+The left side of \eqref{eq:small-a0-test} is at most
+\[
+ R_0U_0^{-8d}(4U_0^2)^d\le U_0^{1-5d}<1/4.
+\]
+This proves existence and \eqref{eq:log-a0-size}.
+\end{proof}
+
+In particular, a bound on $\log(1/\widehat S_{\min})$ yields a bound
+on the working ranges.  No bound on input denominator lengths is
+implicit in this statement.  Propagating the reference-slack bound
+between phases remains a separate induction.
+
+\subsection{Checking the displayed parameter choice across phases}
+\label{app:parameter-check}
+
+Here we verify \eqref{eq:parameter-choice}, rather than treating its
+range requirements as extra hypotheses. The initial padded data have
+logarithmic magnitude $O(H)$ and reference slacks at least one.
+The initial primal--dual gap is at most a polynomial in the original
+data magnitudes and $M$. Set the internal accuracy in advance and let
+$N_{\max}$ be the number of factor-four contractions needed to reach it.
+Then $N_{\max}=O(H)$ is known before the phases run.
+
+For the first $j\le N_{\max}$ phases maintain inductively
+\begin{equation}\label{eq:reference-induction}
+ \log(1/\widehat S_{\min})\le CjH^3
+\end{equation}
+for a universal constant $C$. This holds initially. In the current
+phase, $\log S_{\max}=O(H)$, $\Omega=O(M)$ and
+$\log q_{\max}=O(H)$. Use initialization tolerance $\epsilon=H^{-4}$.
+Its potential bound gives
+\[
+ \overline P=K+O(MH^8),\qquad
+ D=\overline P+\Omega\log(q_{\max}/a_0)
+      =K+O(MH^8)\le2K.
+\]
+The term $\epsilon K=MH^8$ is the largest new initialization offset;
+the negative logarithmic regularizer has the same order. The barrier
+logarithms cost only $O(MH^4)$, and its power offset costs $O(MH^2)$.
+All constants are absorbed by a fixed enlargement of $H$.
+
+Since $\log D=O(H)$, the root bounds imply
+\[
+ \log L_{\max}=O(H^4),\qquad
+ \log(1/L_{\min})=O(H),\qquad
+ \log(1/(\sigma_e-b_e))
+ \le\log(1/\widehat S_e)+O(H^3).
+\]
+Rounded anchor changes can consume at most a factor two of this slack
+margin. The next phase's reference slack therefore obeys
+\eqref{eq:reference-induction}, after increasing $C$. Keeping references
+fixed during within-phase resets is what permits this induction.
+
+Initialization and the endpoint floor test also follow quantitatively.
+The logarithm of their left sides contains the negative term
+$-(1-\kappa)H^8\log2$. All positive terms total at most $O(H^4)$:
+they come from $\widehat S_{\min}^{-1}$, $D_{\rm col}$, $K$, and
+$(2D)^{2+1/\alpha_{\rm b}}$, whose logarithm is $O(H^3)$.
+Thus both inequalities hold with large fixed slack. The endpoint norm
+certificate used in the floor test has no dependence on this floor,
+so the order of proof is not circular.
+
+Throughout descent, the coarse lower bound is sufficient:
+\[
+ q_i\ge a_0/D,\qquad
+ q_i^\kappa\ge\exp[-\kappa(H^8\log2+\log D)]\ge1/2,
+ \qquad q_i^\kappa\le q_{\max}^\kappa\le2.
+\]
+Also $p=40H$ gives $(pD)^{1/p}\le3$, so $|x_i|\le3b_0$.
+Only at a stationary endpoint do we use the stronger $q_i>a_0$.
+It gives $V\le2\Omega=O(M)$, whereas the energy cap gives
+$E_p\le3pM=O(MH)$. Substituting in the contraction theorem proves
+the required factor-four progress for the current phase. This completes
+the induction for all $N_{\max}$ phases and simultaneously justifies
+the phase count. In particular no bound involving $1/(1-\gamma_e)$
+has entered the argument.
+
+
+
+\section{From original capacities to the grounded program}\label{app:reduction}
+
+For an original arc $e=(u,v)$, introduce a new coordinate $j_e$ and two
+nonnegative variables $f_e,z_e$, with rows
+\[
+ A_{f_e}=-e_u^{\mathsf T}+\gamma_e e_{j_e}^{\mathsf T},\qquad
+ A_{z_e}=-e_v^{\mathsf T}+e_{j_e}^{\mathsf T}.
+\]
+Give them costs $c_e$ and zero. The new demands are
+\[
+ d'_{j_e}=\gamma_eu_e,\qquad
+ d'_v=d_v-\sum_{e\text{ entering }v}\gamma_eu_e.
+\]
+The equation at $j_e$ reads $\gamma_ef_e+z_e=\gamma_eu_e$.
+It is exactly the capacity condition $f_e\le u_e$, with
+$z_e=\gamma_e(u_e-f_e)$. At an old vertex the new row sum is
+$-\sum_{\rm out}f_e-\sum_{\rm in}z_e$; substituting for $z$ gives
+the original net-inflow equation. Thus this capacity gadget is exact
+and keeps at most two nonzeros of opposite signs in each row.
+
+Now add both signed unit unary variables at every coordinate, at common
+positive cost $U$. They ensure an easy primal start, a bounded dual
+region, and an exact residual repair. For target original conservation
+error $\epsilon_{\rm out}$, one sufficient choice is
+\[
+ U=4W^2+
+       \frac{8(1+W)^2(2m_{\rm original}W^2+1)}{\epsilon_{\rm out}}.
+\]
+At old vertices use dual anchor zero and at gadget coordinates use
+$-2W^2$. Every physical-row slack is at least one; the unary costs
+also leave strict slack. A feasible padded primal baseline uses
+$f_e=0,z_e=\gamma_eu_e$ and signed unary flow for the remaining original
+demands. All initial magnitudes and inverse positive slacks have
+logarithm $O(H)$ when $\log(1/\epsilon_{\rm out})=O(H)$.
+
+The artificial rows generally do change exact feasibility after they
+are removed. The next estimate is the precise reason they are allowed.
+
+\begin{lemma}[Removing padding and clipping]\label{lem:padding}
+Suppose the original instance is feasible. Let a feasible padded solution
+have artificial mass $a$ and objective at most $\OPT+\epsilon$.
+If $U>W^2$, clipping its original coordinates to $[0,u]$ gives
+\[
+ c^{\mathsf T}\bar f\le\OPT+\epsilon,\qquad
+ \norm{B^{\mathsf T}\bar f-d}_\infty
+ \le [2+W(1+W)]\frac{2m_{\rm original}W^2+\epsilon}{U-W^2}.
+\]
+\end{lemma}
+\begin{proof}
+Write the signed unary contribution as $r$, with $\norm r_1\le a$.
+The gadget equation gives $f_e\le u_e+W|r_{j_e}|$, hence
+$\norm{f-\bar f}_1\le Wa$. Substitution into the old equations gives
+imbalance $-r_v-\sum_{e\text{ entering }v}r_{j_e}$. Its $\ell_1$ norm
+is at most $2a$. Clipping changes that norm by at most
+$(1+W)\norm{f-\bar f}_1\le W(1+W)a$ and changes objective by at most
+$W\norm{f-\bar f}_1\le W^2a$.
+
+Since $f_e\le u_e+W|r_{j_e}|$ and $|c_e|\le W$,
+$c^{\mathsf T}f\ge-m_{\rm original}W^2-W^2a$.
+An original feasible optimum has absolute objective at most
+$m_{\rm original}W^2$ and is a feasible padded solution with no
+artificial mass. Consequently
+$(U-W^2)a\le2m_{\rm original}W^2+\epsilon$.
+Finally,
+$c^{\mathsf T}\bar f\le c^{\mathsf T}f+W^2a
+\le\OPT+\epsilon-(U-W^2)a$, proving both bounds.
+\end{proof}
+
+For maximum delivery, delete the source and sink columns from the
+original balance equations, set the remaining demands to zero, and use
+cost $-B_{et}$ on original arc $e$. Missing endpoints can make a row
+unary; its actual coefficient and sign are retained. The same gadget
+and padding argument then give an approximate maximum-delivery flow.
+Use the stricter conservation accuracy specified in the next appendix.
+The corresponding $U$ still has logarithm $O(H)$.
+
+
+
+\section{Exact internal conservation for lossy maximum delivery}
+\label{app:lossy-repair}
+
+In this appendix $m,n$ refer to the original retained graph. Here $0<\gamma_e\le1$. The output must have exact balance at all
+vertices other than source $s$ and sink $t$. Approximate padded
+feasibility alone does not imply this guarantee.
+
+\subsection{Why a normalized acyclic optimum exists}
+
+Start with an optimal exactly feasible original flow. If its positive
+support has a directed cycle, subtract the same amount
+$\varepsilon=\min_{e\text{ on cycle}}f_e$ from every cycle edge.
+At an internal cycle vertex, net inflow increases by
+$(1-\gamma_{\rm incoming})\varepsilon\ge0$.
+Temporarily allow this nonnegative excess. If the cycle contains $t$,
+its net inflow also increases; otherwise its objective is unchanged.
+Each cancellation removes an edge, so after finitely many cancellations
+the support is a DAG with nonnegative internal excess and no smaller
+sink value.
+
+Such a DAG flow is an existence-only sum of generalized paths. A path
+starts at $s$ or $t$ and ends at $s,t$, or an internal vertex with excess.
+This decomposition follows by tracing positive outgoing flow backward:
+an internal vertex cannot be a net source, and acyclicity ends the trace.
+Flow along a path is attenuated by the successive gains. Keep only
+paths from $s$ to $t$. A discarded path starting at $t$ contributed
+negatively to sink net inflow; all other discarded paths contributed
+zero. The kept flow has exact internal balance, no incoming source
+arcs, no outgoing sink arcs, and no smaller delivery. It is therefore
+also optimal. Its exact DAG support decomposes into at most $m$ paths,
+because maximal subtraction of a positive $s$--$t$ path kills an edge.
+No path decomposition is executed by the algorithm.
+
+We may therefore delete incoming arcs at $s$, outgoing arcs at $t$,
+and vertices unable to reach $t$. If no arc remains, return zero. Otherwise put $F_{\max}=m u_{\max}$.
+If $F_{\max}\le\delta$, the zero flow is sufficient.
+
+\subsection{Pruning with a certified source tree}
+
+Let $a_*=\delta/(8F_{\max})$. We need source-tree paths of noticeable
+gain, without distinguishing nearly equal rational path gains.
+Use multiplicative Dijkstra with a monotone downward rounding map
+\[
+ F_e(g)=\operatorname{round}_{\downarrow}(\gamma_e g),
+ \qquad (1-\xi)\gamma_e g\le F_e(g)\le\gamma_e g,
+ \quad \xi=1/(10n),
+\]
+above the truncation threshold $a_*/4$; smaller labels are set to zero.
+The map is monotone and never exceeds $g$, so the usual label-setting
+proof applies. Parent pointers always point to previously settled
+vertices and form simple paths. The nonzero working labels have
+logarithmic range $O(H)$ and require $O(\log n)$ relative mantissa bits.
+
+Retain vertices whose settled label is at least $a_*$. Their true
+parent-path gain is at least that label. If a vertex's true maximum
+source gain is at least $2a_*$, take a simple maximizing path.
+Every prefix has at least its final gain, because all gains are at most
+one. Rounding along at most $n-1$ edges loses a factor no smaller than
+$(1-\xi)^{n-1}>1/2$, so that path never truncates and its endpoint
+receives label at least $a_*$. Thus a deleted vertex has true maximum
+source gain below $2a_*$.
+
+\emph{Recompute reverse reachability from $t$ in the retained graph.}
+Delete vertices that no longer reach $t$. This second deletion is
+necessary: a retained vertex's former route to $t$ might have passed
+through a low-gain vertex. It removes no surviving $s$--$t$ path.
+It also preserves source-tree prefixes: a retained prefix vertex
+reaches its retained descendant, and then $t$.
+If no source--sink path remains, return zero; the same pruning bound
+below certifies its error.
+
+In the existence-only optimal path decomposition, a path meeting a
+low-gain vertex delivers at most $2a_*u_{\max}$. Charging each of at
+most $m$ paths once loses at most $2a_*F_{\max}=\delta/4$.
+The final retained graph now has both a source tree of gain at least
+$a_*$ and a directed tree toward $t$.
+
+\subsection{The two sweeps and their capacity cost}
+
+On that graph obtain a clipped approximate flow with objective error
+at most $\delta/4$ and absolute internal balance errors at most
+\begin{equation}\label{eq:repair-accuracy}
+ \epsilon\le c\frac{\delta a_*u_{\min}}{nF_{\max}}
+\end{equation}
+for a sufficiently small universal $c$. Its required logarithmic
+accuracy is $O(H)$, since $u_{\min}\ge1/W$.
+
+First process the source tree from leaves to source. At an internal
+vertex with deficit, add just enough flow on its incoming tree edge
+to remove it, and charge the withdrawal to the parent. Stop at $s$.
+Each initial deficit contributes at most its size divided by the
+gain of a retained source path to any upstream edge. Therefore no
+edge receives more than $n\epsilon/a_*$. A request can consume an
+existing positive excess but cannot create one. At the end every
+internal balance is nonnegative and the total remaining internal
+excess is at most $n\epsilon$.
+
+Second process a tree directed toward $t$ from leaves to root. Send
+each internal vertex's excess on its outgoing tree edge. The received
+amount at its parent is no larger. Hence no edge receives more than
+$n\epsilon$, and every internal balance becomes exactly zero.
+Neither sweep uses negative flow or decreases sink inflow.
+
+The combined additions violate each capacity by at most a factor
+$1+\theta$, where
+$\theta\le2n\epsilon/(a_*u_{\min})$.
+Divide all flows by $1+\theta$. Exact balance is homogeneous, so it
+is preserved. The lost delivery is at most
+$\theta F_{\max}\le\delta/4$ by \eqref{eq:repair-accuracy}.
+Indeed the unscaled repaired sink inflow is at most
+$(1+\theta)F_{\max}$, by its relaxed capacity bounds.
+Together with pruning and optimization, the total loss is below
+$\delta$. The sweeps cost $O(M)$ original-coefficient operations;
+the rounded path computation costs $O(M\log M)$ operations.
+
+
+
+\section{Numerical realization with an absolute correction budget}
+\label{app:numerics}
+
+The precision argument has two parts: show that every scale used as
+a denominator has a bounded logarithmic range, and use absolute
+error budgets for all cancellation quantities. It must not assume
+that the true imbalance, a gradient entry, or $Q_e-R_e$ is separated
+from zero.
+
+\subsection{What is stored and what is recomputed}
+
+Store all additive cut increments for $s$ and $x$ as exact dyadics.
+Their tree representations therefore have no floating-point trajectory
+error. The centered field starts at exact zero. At a row refresh,
+query both fields, evaluate $q_i=a_0\exp(s_i)$
+and $y_i=a_i+q_ix_i$ at the queried endpoints, solve the scalar row
+equation, and then round the complete row contribution. The two
+coordinate gradients and every capacity of that row use the same
+snapshot. Approximate evaluations affect certified choices and cache
+errors; they do not replace the stored additive fields by a perturbed
+uncontrolled trajectory.
+
+The range induction gives a universal $C$ for which positive
+denominator scales, scalar-root conditioning scales, and finite-domain
+margins lie in $[e^{-H^C},e^{H^C}]$. Initial data, fields, row weights,
+matrix entries and gradient magnitudes are bounded above by $e^{H^C}$.
+Only the first class has a lower bound. In particular $w_e$ may vanish,
+and $\ell_e-w_e$, residuals, and derivative coordinates may be
+arbitrarily small.
+
+There are at most $e^{H^C}$ operations after enlarging $C$ to dominate
+the proved work count and all polynomial factors. Choose common
+absolute evaluation error $\epsilon_{\rm num}=2^{-H^{C'}}$, with a
+fixed $C'>C+10$. This makes the sum of evaluation, dyadic-step,
+and cache-rounding errors smaller than a tenth of the reserved descent,
+cache, domain, and phase-gap margins. Exponentials and powers use range
+reduction and series with certified remainders. Scalar roots use
+logarithmic bracketing and bisection; the explicit lower bound on the
+root derivative certifies the final interval. These computations use
+$\poly(H)$ bits and operations.
+
+Every ordinary graph ground coefficient is stored with its positive
+floor, such as $1+|r|+|t|$ or $h_i+\sum_{e:u_e=i}|r_e|$.
+An arbitrarily small $|r_e|$ is merged into that ground coefficient,
+rather than treated as a separate tiny edge. Binary coefficients have
+the lower bound supplied by $L_{\min},q_{\min}$ and the original
+nonzero row coefficients. Thus capacity-level decomposition has
+$\poly(H)$ levels. A common positive scaling of graph weights is
+handled without changing normalized steps: multiply capacities and
+gradients by $D_*$ and store the field divided by $D_*$.
+
+\subsection{Why rounded static recovery retains its radius}
+
+Write $T_B=B_0^{\mathsf T}$ for the ideal endpoint correction operator
+and $U$ for its explicit unit-unary right inverse. Choose a known
+absolute radius $r_*>0$ from \eqref{eq:recovery-radius}, with a constant
+fraction of the permitted recovery radius still unused. This bound is
+positive even when the actual correction optimum is zero.
+
+Form a consistent recovery snapshot as follows. Choose positive rational
+$\widetilde q,\widetilde\ell$ approximating the ideal values, keep
+$w=\lambda f^0$ and $\lambda$ as exact phase expressions, and set
+\[
+ \widetilde L=\widetilde\ell+w,\qquad
+ \widetilde B_0=\diag(\widetilde L)A\diag(\widetilde q),\qquad
+ \widetilde g=\diag(\widetilde q)A^{\mathsf T}(\widetilde\ell-w),
+ \qquad \widetilde T_B=\widetilde B_0^{\mathsf T}.
+\]
+The matrix $A$ retains its original coefficients. In particular $w$ is
+not independently rounded, which would destroy $A^{\mathsf T}w=\lambda d$.
+All snapshot entries are rational original-coefficient expressions;
+no exact exponential or exact scalar root is needed in a final residual.
+Choose $\widetilde q,\widetilde\ell$ so the resulting positive unary
+denominators differ from their ideal values by relative error below
+$1/4$. Define $\widetilde U$ using those exact snapshot denominators;
+then this right inverse exists and has
+norm at most twice the ideal elementary bound. For any ideal witness
+$T_Bv_*=g$, $\|v_*\|_\infty\le r_*$, the explicit perturbed witness is
+\begin{equation}\label{eq:perturbation-witness}
+ \widetilde v_*=v_*+\widetilde U
+     [\widetilde g-g-(\widetilde T_B-T_B)v_*].
+\end{equation}
+It satisfies $\widetilde T_B\widetilde v_*=\widetilde g$ exactly.
+If the demand error is at most $a$ in $\ell_\infty$ and every matrix
+entry error is at most $a$, then
+\[
+ \|\widetilde v_*-v_*\|_\infty
+ \le\|\widetilde U\|_{\infty\to\infty}\,a(1+mr_*).
+\]
+The right-inverse norm is at most $e^{H^C}$. Our precision makes this
+less than $r_*/100$. The snapshot graph norm and its condition
+inequalities also change by only a reserved constant factor: positive
+graph coefficients are rounded relatively. More explicitly, if
+$\mu=\|\widetilde U\|\,\|\widetilde T_B-T_B\|\le1/100$, then the same
+witness with no demand perturbation gives
+$\operatorname{opt}_{\widetilde T_B}(b)
+\le(1+\mu)\operatorname{opt}_{T_B}(b)$ for every $b$.
+Interchanging the two operators gives the reverse inequality, using
+the ideal right inverse. Thus their minimum-congestion norms are
+uniformly equivalent, and the preconditioner condition changes by only
+a constant factor. Use the snapshot starting radius
+$r_0=(1+1/50)r_*$, rounded upward by less than $r_*/1000$ to a rational
+value if necessary. The perturbed witness fits within this radius.
+The exact solver's norm bound is at most $3r_0/2<1.54r_*$.
+Reserve an additional $r_*/50$ for returning to the original snapshot
+coefficients and for arithmetic errors. The resulting bound is below
+$2r_*$. Choosing $r_*\le\varepsilon/10$ leaves ample space in the
+nonnegative recovery formula.
+
+This is an additive perturbation argument. It does not assert that
+fixed absolute precision preserves a relative factor times an
+arbitrarily tiny or zero correction optimum.
+
+\subsection{The multiplicative-weights computation needs no tiny signs}
+
+The solver uses stage radii $\rho_j=r_0/4^j$ and stops after
+$O(\log M_0)$ stages. Thus every normalization radius is at least
+$r_*/(24M_0)\ge e^{-H^C}$, independent of the size of the actual
+imbalance. Each stage has exact residual-reduction slack, from
+$\rho_j/8$ to the required $\rho_j/4$.
+Use the slack for absolute errors in matrix products, weights and
+support decisions. If $B_0R^{\mathsf T}(p^+-p^-)$ is approximated
+coordinatewise to error $a$, any resulting cube support choice is
+suboptimal by at most $2m\rho_j a$ before normalization, or
+$2ma/q_{\kappa,+}$ in normalized loss. Near-zero entries need no
+sign resolution.
+
+For $T_j$ iterations, require the support-product coefficient accuracy
+and the normalized loss/weight accuracy, respectively, to satisfy
+\[
+ a\le\frac{q_{\kappa,+}}{10^4mT_j\kappa_0},\qquad
+ \epsilon_{\rm loss}\le\frac1{10^4T_j\kappa_0}.
+\]
+The factor $m$ explicitly pays for summing coefficient errors over the
+cube coordinates. Cumulative support and loss errors then consume less
+than half the stage slack.
+Compute exponential weights by subtracting the largest log weight and
+truncating tails with certified total mass below this accuracy.
+Only $O(\log(kT_j\kappa_0))=\poly(H)$ logarithmic range is retained;
+there is no requirement to exponentiate a large negative cumulative
+logit to relative precision. All stage scales and inverse accuracies
+have logarithm $\poly(H)$.
+
+Finish with the unit-unary correction of the \emph{actual} snapshot residual
+$\widetilde g-\widetilde B_0^{\mathsf T}v$, evaluated using the original coefficients and
+the returned vector. Its norm is bounded by the coarse-solver estimate
+plus the additive perturbation bound above. This corrects the actual
+snapshot, rather than an earlier unrounded vector.
+Apply \eqref{eq:recovery-flow-formula} with $\widetilde\ell,w,\lambda$
+and this exactly corrected vector. The consistent snapshot definitions
+give $A^{\mathsf T}(\widetilde\ell-\widetilde L\odot v)=\lambda d$
+identically, so the recovered flow conserves the original $A$ exactly.
+The complementarity numerator changes by at most
+$\sum_e\sigma_e|\widetilde\ell_e-\ell_e|
+\le e^{H^C}\epsilon_{\rm num}$; this is inside the reserved phase-gap
+margin. Thus exact snapshot feasibility and the certified objective
+bound hold for the same returned flow.
+
+\subsection{Anchors, primal baselines, and final exact expressions}
+
+At a reset, replace $a=y$ by a rational approximation within
+$\epsilon_{\rm num}$ and set $x=0$. This moves the physical dual
+vector by that amount; it is not an exact $y$-preserving operation.
+The bounded derivatives and domain margin make the resulting potential
+increase negligible. The reset still decreases potential by at least
+$M/2$. Barrier references and $w$ remain fixed. The same construction
+starts the next phase with a rational strictly feasible anchor.
+
+Compute $w$ and the baseline objective once per phase. Test a certified
+interval for the phase gap before dividing by it. An interval overlapping
+the internal stopping range is handled using its certified upper end,
+within the reserved output margin.
+
+Round a recovered nonnegative primal flow down to dyadics, with error
+at most $\epsilon_{\rm num}$ per entry. Repair its actual
+original-coefficient balance residual with signed unit unary variables.
+For a residual $r_i$ and approximation $\widehat r_i$ with error at most
+$\upsilon$, use
+\[
+ k_i^+=\max\{0,-\widehat r_i\}+\upsilon,\qquad
+ k_i^-=k_i^++r_i.
+\]
+Both entries are nonnegative and $k_i^+-k_i^-=-r_i$ exactly.
+The added mass is $O(MW\epsilon_{\rm num}+n\upsilon)$, with negligible
+objective cost. This keeps each next baseline in a fresh $O(M)$-size
+shared expression representation. Only original-coefficient arithmetic
+is used to represent the exact residual; its potentially tiny sign is
+never decided by a floating-point comparison.
+
+After removing artificial variables, minimum-cost output has the
+approximate balance guarantee of Lemma~\ref{lem:padding}. For lossy
+maximum delivery, the final sweeps use original gains and preserve
+balance identically. Fully expanding those expressions can depend on
+input denominator lengths, which are outside the arithmetic bound.
+
+
+\begingroup\small
+\begin{thebibliography}{9}\setlength{\itemsep}{3pt}
+\bibitem{cuts} J. van den Brand, L. Chen, R. Kyng, Y. P. Liu,
+S. Meierhans, M. Probst Gutenberg, S. Sachdeva.
+\emph{Almost-Linear Time Algorithms for Decremental Graphs:
+Min-Cost Flow and More via Duality}. FOCS 2024.
+\url{https://arxiv.org/abs/2407.10830}.
+\bibitem{sherman} J. Sherman.
+\emph{Generalized Preconditioning and Network Flow Problems}.
+\url{https://arxiv.org/abs/1606.07425}, version 2.
+\bibitem{generalized} S. Jiang, M. Kapralov, L. Li, A. Sidford.
+\emph{Generalized Flow in Nearly-linear Time on Moderately Dense Graphs}.
+FOCS 2025. \url{https://arxiv.org/abs/2510.17740}.
+\end{thebibliography}
+\endgroup
+\end{document}

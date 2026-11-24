@@ -1,0 +1,629 @@
+\documentclass[11pt,letterpaper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[margin=0.98in,top=0.88in,bottom=0.94in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{lmodern,microtype,booktabs,tabularx,xcolor,fancyhdr,enumitem}
+\usepackage[bookmarksnumbered]{hyperref}
+\definecolor{inkblue}{HTML}{184D60}
+\hypersetup{colorlinks=true,linkcolor=inkblue,citecolor=inkblue,urlcolor=inkblue,
+ pdftitle={Generalized minimum-cost flow via ordinary minimum-cost flow}}
+\usepackage{titlesec}
+\titleformat{\section}{\large\sffamily\bfseries\color{inkblue}}{\thesection}{.65em}{}
+\titleformat{\subsection}{\normalsize\sffamily\bfseries}{\thesubsection}{.65em}{}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\pagestyle{fancy}\fancyhf{}\fancyhead[L]{\small\sffamily Generalized minimum-cost flow}
+\fancyhead[R]{\small\sffamily Exact-arithmetic reduction}\fancyfoot[C]{\small\thepage}
+\setlength{\headheight}{14pt}\setlength{\parindent}{0pt}\setlength{\parskip}{0.38em}
+\setlist{leftmargin=*,nosep}\allowdisplaybreaks[2]\raggedbottom
+\setcounter{tocdepth}{1}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries Generalized minimum-cost flow\\[3pt]via ordinary minimum-cost flow}\par
+\vspace{3pt}
+{\large An exact-arithmetic reduction for prescribed demands and gains in $(0,1]$}
+\end{center}
+
+\begin{abstract}\noindent
+We solve the box-constrained price LP $\max\{d^\top y:Ay\le c,\ |y_i|\le R\}$
+for the inward-pointing capacity gadget. A price update reduces to minimizing
+homogeneous positive parts on boxes. Each local model is dual to an ordinary
+unit-gain min-cost flow problem. To recover the primal, a second, randomly
+perturbed price optimization identifies a linearly independent set of rows.
+Tree and cycle substitutions give the primal amounts, and signed unit variables
+restore the prescribed demands exactly in the grounded LP. For inverse-polynomial
+additive accuracy in a range parameter $P$, the reduction uses
+$O(\log^4 P)$ ordinary min-cost flow models on linear-size graphs.
+\end{abstract}
+\tableofcontents
+
+\section{The LP pair and the guarantee}\label{sec:pair}
+Let $G=(V,E)$ have $n$ vertices, $m$ arcs, and $N=n+m+2$. An original
+arc $e=(i,j)$ has capacity $u_e\ge0$, signed cost $c^G_e$, and gain
+$0<\gamma_e\le1$. The original demand at vertex $i$ is $d^G_i$.
+Write $A_G$ for the matrix with row $-\mathbf e_i^\top+\gamma_e\mathbf e_j^\top$.
+The original optimum is
+\[
+ \mathrm{OPT}_G=\min\{(c^G)^\top x: A_G^\top x=d^G,\ 0\le x\le u\}.
+\]
+Assume this LP is feasible. Let $0<\delta<1$, and let $W\ge2$ bound the
+absolute input magnitudes and reciprocals of positive gains and capacities.
+Zero-capacity arcs may be discarded. Arithmetic operations and comparisons
+on input reals, including division by a nonzero number, have unit cost.
+We count random bits separately where they are used.
+
+\subsection{An inward-pointing gadget}
+For every $e=(i,j)$ introduce a private vertex $k_e$ and exactly two arcs
+\[
+ i\longrightarrow k_e\quad(\text{gain }\gamma_e,\ \text{cost }c^G_e),
+ \qquad
+ j\longrightarrow k_e\quad(\text{gain }1,\ \text{cost }0).
+\]
+Put $V'=V\cup\{k_e:e\in E\}$ and $n'=|V'|$. From here on $A$ is the
+lossy incidence matrix of these arcs, $c$ is their cost vector, and $f$ records
+\emph{both} types of arc flow. The transformed demands are
+\[
+ d_{k_e}=\gamma_e u_e,\qquad
+ d_j=d^G_j-\sum_{e\text{ entering }j}\gamma_e u_e\quad(j\in V).
+\]
+In $A^\top f=d$, the private equation forces
+$f_{j\to k_e}=\gamma_e(u_e-f_{i\to k_e})$. Nonnegativity gives the original
+capacity. Substitution in the old equations gives $A_G^\top x=d^G$ for
+$x_e=f_{i\to k_e}$, since the old head sends out
+$\gamma_e(u_e-x_e)$ in place of receiving $\gamma_e x_e$. Conversely every
+feasible original $x$ extends by this formula with the same cost. The two arcs
+have distinct identities even for an original self-loop.
+
+\subsection{Grounded flows and bounded prices}
+Add two nonnegative variables $r_h^+,r_h^-$ of cost $R$ at each $h\in V'$.
+The pair we solve is
+\begin{align}
+ \min_{f,r^+,r^-\ge0}\quad
+   &c^\top f+R\mathbf1^\top(r^++r^-)
+   &&\text{subject to }A^\top f+r^+-r^-=d, \tag{P}\label{eq:primal}\\
+ \max_y\quad &d^\top y
+   &&\text{subject to }Ay\le c,\quad -R\mathbf1\le y\le R\mathbf1.
+   \tag{D}\label{eq:dual}
+\end{align}
+In particular the two price inequalities for $e=(i,j)$ are
+$\gamma_e y_{k_e}-y_i\le c^G_e$ and $y_{k_e}-y_j\le0$.
+The bound rows are included throughout both optimization and recovery.
+For use in proofs put
+\[
+ B=\begin{bmatrix}A\\I\\-I\end{bmatrix},\qquad
+ k=(c,R\mathbf1,R\mathbf1),\qquad v=(f,r^+,r^-).
+\]
+Thus \eqref{eq:primal} minimizes $k^\top v$ under $v\ge0$, $B^\top v=d$.
+For any feasible pair the gap is $k^\top v-d^\top y=v^\top(k-By)$.
+
+\subsection{Accuracy, penalty, and oracle model}
+Given a requested grounded gap $0<\varepsilon\le\delta$, one convenient
+choice of parameters is
+\begin{align}
+ C&=1+\sum_e |c^G_e|u_e, &
+ R&=4W^2+16(1+W)(C+1)/\delta,\label{eq:R}\\
+ P&=2^{\lceil\log_2(2^{20}(2+R+NW^2+1/\varepsilon))\rceil}.\nonumber
+\end{align}
+An \emph{ordinary MCF call} returns an exact optimal flow for a directed graph
+with unit gains, integer capacities, integer costs and integer vertex demands.
+Ordinary models in this note use integers of $O(\log P)$ bits and at most
+two such calls each. We distinguish the number of calls from the running
+time of an implementation of a call.
+\begin{theorem}[Main guarantee]\label{thm:main}
+For the data above, a randomized exact-arithmetic algorithm returns, with
+high probability, a feasible pair of \eqref{eq:primal} and \eqref{eq:dual}
+of gap at most $\varepsilon$. It uses $O(\log^4 P)$ ordinary MCF calls
+of size $O(N)$ and $N\operatorname{polylog} P$ additional work. From its
+primal output one obtains $0\le\bar x\le u$ with
+\[
+ \|A_G^\top\bar x-d^G\|_\infty\le\delta,\qquad
+ (c^G)^\top\bar x\le\mathrm{OPT}_G+\varepsilon .
+\]
+In particular, with $\varepsilon=\delta$, total arithmetic work is
+$N^{1+o(1)}\operatorname{polylog}(2+NW/\delta)$ using an almost-linear
+ordinary MCF algorithm. Dual optimization alone requires no random
+perturbation and is deterministic given a deterministic ordinary MCF oracle.
+\end{theorem}
+
+Section~\ref{sec:hinge} describes the graph
+sent to the ordinary MCF oracle. Section~\ref{sec:dual-improve} uses this
+oracle to optimize prices. Section~\ref{sec:recovery} extracts an actual flow
+from a second price computation. Section~\ref{sec:finish} proves the transfer
+to original variables and totals the calls.
+\section{An ordinary-flow oracle for homogeneous hinges}\label{sec:hinge}
+Write $[s]_+=\max(s,0)$. The common oracle minimizes
+\[
+ J(x)=g^\top x+\sum_e k_e[a_e x_{i(e)}-b_e x_{j(e)}]_+,
+ \qquad l\le x\le D,\qquad 0<l\le D,
+ \quad a_e,b_e,k_e\ge0.
+\]
+Vector inequalities are coordinatewise. Equal bounds pin a coordinate. A unary
+row on this positive box is linear or zero and can be absorbed into $g$.
+\begin{lemma}[Positive-box oracle]\label{lem:hinge}
+Let $Q\ge 2$ bound the number of coordinates and terms. Suppose that all
+coefficient magnitudes, upper bounds, inverse lower bounds, and $1/\xi$
+are at most $Q^{O(1)}$, where $0<\xi<1$. A point of objective at most
+$\min J+\xi$ can be found with $O(\log Q)$ ordinary flow models if
+$D_i/l_i\le2$ for all $i$, and with $O(\log^2 Q)$ such models in general.
+Each model takes at most two ordinary MCF calls on graphs with a linear
+number of vertices and arcs, plus linear or sorting work up to logarithmic
+factors. Integers of $O(\log Q)$ bits suffice for the MCF calls.
+\end{lemma}
+\begin{proof}
+\emph{Local upper model.}
+On a factor-two box choose a current feasible $x^0$ and write
+$x_i=x_i^0(1+z_i)$. Thus $1/2\le1+z_i\le2$. For one binary row abbreviate
+$P=a_e x_i^0$, $S=b_e x_j^0$, $r=P-S$, and
+$h(z)=r(1+z_j)+P(z_i-z_j)$. Replace its positive part by
+\[
+ m(z)=
+ \begin{cases}
+ h(z)+[-r/2-P(z_i-z_j)]_+, &r>0,\\
+ [r/2+P(z_i-z_j)]_+, &r\le0 .
+ \end{cases}
+\]
+Since $1+z_j\ge1/2$, monotonicity of the positive part gives
+$m(z)\ge[h(z)]_+$ in both cases, using $[h]_+=h+[-h]_+$ for $r>0$.
+At $z=0$ equality holds. For any feasible $z^*$,
+\[
+ m(z^*/4)\le \tfrac34m(0)+\tfrac14[h(z^*)]_+ .
+\]
+Indeed, if $r\le0$ then $r/2\le r(1+z_j^*)/4$ since $1+z_j^*\le2$.
+For $r>0$ apply the same inequality with $-r$ in the residual hinge and
+use affine interpolation for $h$. Multiply by $k_e$, sum, and keep the
+linear objective exactly. Taking $z^*$ to be an optimal displacement, a
+model solve to additive error $\varepsilon$ yields a new physical objective
+gap at most $3G/4+\varepsilon$ if the previous gap was $G$. The comparator
+$z^*/4$ is feasible by convexity of the box. Let $V\ge1$ bound the initial
+objective range, with $V=Q^{O(1)}$ from the hypotheses. After $s$ solves the gap
+is at most $(3/4)^sV+4\varepsilon$. Taking $\varepsilon\le\xi/8$ and
+$s=\lceil\log_{4/3}(2V/\xi)\rceil$ proves the local count.
+
+\emph{Constructing the MCF graph.}
+Use a vertex for each price coordinate and a root with $z_0=0$.
+Write the model, up to a known constant, as
+\[
+ p^\top z+\sum_{a=(u,v)} k_a[z_v-z_u-t_a]_+ .
+\]
+The opposite sign of a difference is implemented by reversing the arc.
+Handle the bounds $L_i\le z_i\le U_i$ by adding
+$H[z_i-U_i]_++H[L_i-z_i]_+$, two hinges incident to the root. Choose
+$H>1+\|p\|_1+2\sum_a k_a$ before these bound terms are added.
+For any violation, coordinatewise clipping saves
+$H\sum_i|z_i-\operatorname{clip}(z_i)|$ in bound penalties. The absolute
+change of the other terms is at most $(H-1)$ times the same sum, by the
+unit Lipschitz bound on the positive part. Hence every minimizer is in the
+box. Complete $p$ at the root by $p_0=-\sum_{i\ne0}p_i$.
+
+For an arc use $k_a[t]_+=\max_{0\le f_a\le k_a} f_a t$.
+LP duality for the epigraph LP gives an ordinary minimum-cost flow with
+capacity $k_a$, cost $t_a$, and prescribed net inflows $-p$. Indeed the
+coefficient of $z_i$ after introducing the multipliers is $p_i$ plus the
+ordinary net inflow at $i$; setting it to zero enforces the demand. The
+minimum hinge-model value equals the negative minimum flow cost, up to the
+known constant. Forward residual arcs require $z_v-z_u\le t_a$, and
+backward residual arcs require $z_v-z_u\ge t_a$. Shortest-path labels in
+the optimal flow's residual graph satisfy both conditions and hence give
+an optimal price vector by complementary slackness. Add a supersource
+with zero-length arcs to every vertex, compute distances, and subtract the
+root label. These distances themselves cost at most one additional MCF
+call: demand one unit at every original residual-graph vertex, supply
+their total at the supersource, and use capacities larger than that total.
+Routing along shortest paths gives the sum of the distances as the optimum.
+Every positive-flow arc in an optimum is tight for the distance labels,
+since all reduced costs are nonnegative and their flow-weighted sum is zero.
+The positive support reaches every demanded vertex from the supersource,
+so a traversal adding arc lengths recovers all distances.
+
+\emph{Accuracy of integer calls.}
+On the relative box all $|z_i|\le1$. After factoring out the nonnegative
+difference coefficient, a hinge with translation outside $[-2,2]$ is
+affine or zero there and can be replaced accordingly before graph
+construction. A zero difference coefficient is constant. The remaining
+translations, affine coefficients and hinge weights are polynomially
+bounded. Choose a common dyadic grid of width $Q^{-C}$ (or smaller dyadic
+power of comparable size) with $C$ a sufficiently large fixed constant.
+Round weights to nonnegative grid points, translations and affine terms
+to that grid, and relative bounds outwards. On $|z_i|\le2$ the uniform
+objective change is at most $Q^{O(1)}Q^{-C}$ by the triangle inequality
+and the unit Lipschitz constant of the hinge. Here the comparison is with
+the local model after the affine simplifications; this extension agrees
+with the original model throughout the true box. Clip the rounded
+optimizer back to the true box. The distance moved in maximum norm is
+at most one mesh width, so its extra cost for this Lipschitz extension
+is again at most $Q^{O(1)}Q^{-C}$. Choosing the total error below
+$\varepsilon$ gives the local guarantee above. Construct the bound
+penalties after rounding, using an integral $H$ large enough for the
+rounded data. Round nonground demands first and define the root demand
+by their exact sum. Scale all demands and capacities by a common power
+of two and all costs by a common power of two. The exact integer MCF
+theorem of \cite{cklpps} applies, with its logarithmic capacity and
+cost factors; divide recovered cost labels by the cost scale. Thus the
+integer oracle bounds apply also to real model inputs in the stipulated
+exact-arithmetic model.
+
+\emph{Arbitrary positive boxes.}
+Let $J_*$ denote the minimum on the original box. Starting at its upper
+corner $D_0=D$, approximately minimize in
+$[l\vee(D_j/2),D_j]$ to additive error $\eta$, obtaining $v=D_{j+1}$.
+Here $\vee$ and $\wedge$ denote coordinatewise maximum and minimum.
+The function $J$ is lattice submodular. In fact increasing $x_i$ raises
+$[a x_i-b x_j]_+$ by a nonincreasing amount as $x_j$ increases; this
+proves the two-coordinate lattice inequality, and the linear term gives
+equality. Let $u_0$ be a global minimizer. Inductively, suppose
+$l\le u_j\le D_j$ and $J(u_j)\le J_*+j\eta$. Since $v\vee u_j$ is in
+the local box, $J(v)\le J(v\vee u_j)+\eta$. Submodularity now implies
+that $u_{j+1}=v\wedge u_j$ satisfies $J(u_{j+1})\le J(u_j)+\eta$
+and is bounded by $D_{j+1}$. Also $(D_j+u_j)/2$ belongs to the local
+box. Convexity and the local solve imply for $G_j=J(D_j)-J_*$
+\[
+ G_{j+1}\le \tfrac12G_j+(j/2+1)\eta .
+\]
+Induction gives $G_j\le2^{-j}V+j\eta$. Taking
+$T=\lceil\log_2(2V/\xi)\rceil$ and $\eta=\xi/(2T)$ suffices.
+The $u_j$ occur only in the proof. Each of the $T$ actual boxes is
+factor-two and costs $O(\log Q)$ ordinary models, proving the bound.
+\end{proof}
+\section{Improving the dual prices}
+\label{sec:dual-improve}
+
+Write all inequalities of the dual as $By\le k$, where $B$ stacks $A,I,-I$ and $k$ stacks $c,R\mathbf1,R\mathbf1$. A binary row has its positive coefficient at a private vertex and its negative coefficient at an original vertex. The objective is $d^\top y$. The same algorithm allows arbitrary unary box constraints $\underline y_i\le y_i\le\overline y_i$, represented by the rows $I,-I$ with respective right-hand sides $\overline y,-\underline y$. This more general form will accommodate independent perturbations to unary costs. Let $D_{\rm box}=\max_i(\overline y_i-\underline y_i)$, equal to $2R$ for the original box.
+
+\begin{theorem}[Dual optimization]\label{thm:dual}
+Suppose a strictly feasible seed $y^s$ is given. Choose a power of two $Q\ge 2^{16}$ bounding the number of rows and coordinates, $\|B\|_{\max}$, $\|d\|_1$, $D_{\rm box}$, and $1/\min_e(k_e-B_e y^s)$. Starting from $y^s$, one can find a feasible price vector of objective at least $\mathrm{OPT}_{\mathrm D}-1/Q$ using $O(\log^4 Q)$ ordinary-flow models of linear size and $O(\log^4 Q)$ linear-size scans. Here each model is implemented as in Lemma~\ref{lem:hinge}. Enlarging $Q$ to include a desired inverse accuracy gives the same bound in that parameter.
+\end{theorem}
+
+For the original symmetric box, if $R\ge \|c\|_\infty+2$, take all old vertex prices equal to $\|c\|_\infty+1$ and all private prices equal to zero. Every arc and box slack is at least one, including when some input costs are negative.
+
+\subsection{The two signs and the largest feasible displacement}
+
+Let $y$ be the current prices and let $s_e=k_e-B_e y$ be their slacks. The starting value is $y=y^s$. A displacement $h$ is feasible if $Bh\le s$. For any binary row and any $h$, write $h=h^+-h^-$ for the decomposition into its coordinatewise positive and negative parts. Then
+\[
+ [B_e h^+]_+ + [B_e(-h^-)]_+=[B_e h]_+.
+\]
+When the endpoint coordinates of $h$ have the same sign, one of the two summands has zero argument. When they have opposite signs, the two arguments have the same sign because the row coefficients have opposite signs. The identity also holds for unary rows. Thus both pieces of a feasible displacement are individually feasible. Take $h=y^*-y$ for an optimal price vector. Its two pieces have total score $G=\mathrm{OPT}_{\mathrm D}-d^\top y$, so the better of the increasing and decreasing searches has optimal score at least $G/2$.
+
+For a sign $\sigma\in\{+1,-1\}$ write the move as $h=\sigma x$, $x\ge0$, with signed score $g^\top x$, $g=\sigma d$. Divide each row by its slack and drop the automatically satisfied nonpositive unaries. Write the remaining constraints as
+\begin{equation}\label{eq:signed-move}
+ a_e x_i-b_e x_j\le1,\qquad a_e>0,\quad b_e\ge0.
+\end{equation}
+An upper unary is included by setting $b_e=0$ and omitting its second coordinate. Let $S$ be the largest signed score. The search is bounded, since the box constraints supply each coordinate with a finite upper cap $V_i=\overline y_i-y_i$ on an increasing move and $V_i=y_i-\underline y_i$ on a decreasing move. For the symmetric box these reduce to $V_i=R-\sigma y_i$.
+
+There is an exact coordinatewise greatest feasible vector $D$. For sign $+1$, first set $D_j=V_j$ at all original vertices (the negative endpoints). For every private vertex $i$ set
+\[
+ D_i=\min\left\{V_i,\ \min_{e=(i,j)}(1+b_eD_j)/a_e\right\},
+\]
+where the inner minimum uses its binary rows. Swap original and private vertices for sign $-1$. Substituting gives feasibility. Conversely, any feasible $x$ has $x_j\le D_j$ on the first layer; every binary and unary cap on the second layer then implies $x_i\le D_i$. The computation takes a scan. A mixed-sign objective $g$ can be small at $D$, which motivates the subsequent search below $D$.
+
+\subsection{A signed search on shrinking boxes}
+
+The following subroutine returns a profitable move with a controlled overshoot in \eqref{eq:signed-move}. Define
+\[
+ T=24\lceil\log_2 Q\rceil,\qquad
+ \theta=1/(8T),\qquad \eta=Q^{-16},\qquad l=Q^{-32}.
+\]
+At the beginning of each search $s_e\ge Q^{-11}$, as shown in the outer-round analysis below. Thus $a_e,b_e\le Q^{12}$. The vector $l\mathbf1$ has row values at most $Q^{-20}\le\theta$, hence $l\mathbf1\le D$.
+
+\begin{lemma}[Signed improvement]\label{lem:signed-progress}
+In $T$ factor-two box optimizations one can find $v\ge0$ with every row of \eqref{eq:signed-move} at most $5/4$ and with
+\[
+ g^\top v\ge\theta S-e_0,\qquad e_0=lQ+2^{-T}Q^2+(T+1)\eta .
+\]
+\end{lemma}
+
+\begin{proof}
+Maintain an upper vector $w$ and row allowance $\tau$, initially $w=D$ and $\tau=1$. In the proof only, let $x^*$ attain the signed optimum and initialize a comparison vector $u=(\theta x^*)\vee(l\mathbf1)$, with $\vee,\wedge$ denoting coordinatewise maximum and minimum. Initially every row of $u$ is at most $\theta$: choose the vector furnishing its positive endpoint, and observe that enlarging the negative endpoint can only help. Also $g^\top u\ge\theta S-lQ$. We maintain
+\begin{align}
+ l\mathbf1\le u\le w\le D,\qquad
+ a_e w_i-b_e w_j&\le\tau,\label{eq:sign-upper}\\
+ a_e u_i-b_e u_j&\le \max\{\theta,\tau u_i/w_i\}.\label{eq:sign-shadow}
+\end{align}
+
+In the box $\max(l,w_i/2)\le z_i\le w_i$ form
+\[
+ \tilde a_e=[a_e-(\tau+\theta)/w_i]_+,
+ \qquad H(z)=\sum_e[\tilde a_e z_i-b_e z_j]_+,
+ \qquad K=64(1+Q^2)/\theta.
+\]
+Use Lemma~\ref{lem:hinge} to maximize $g^\top z-KH(z)$ to additive error $\eta$ and denote the returned point by $v$. This is a homogeneous-hinge minimization after changing the objective sign. All coordinates, inverse lower endpoints, coefficients, weights, objective ranges and inverse tolerances needed for additive approximation are polynomially bounded in $Q$. For instance, perturbing each hinge coefficient by $Q^{-100}$ changes the full objective uniformly by at most $2KQ^2 Q^{-100}$. One may use half the requested error for such perturbations when an ordinary implementation requires a bound on inverses of nonzero coefficients.
+
+Both $w$ and $m=(w+u)/2$ have zero hinge penalty. For $w$ this follows from \eqref{eq:sign-upper}. For $m$, using $\max(\theta,\tau u_i/w_i)\le\theta+\tau u_i/w_i$ gives
+\[
+ a_e m_i-b_e m_j\le \tau m_i/w_i+\theta/2\le (\tau+\theta)m_i/w_i .
+\]
+Truncating the modified coefficient to zero when negative preserves the zero penalty. Comparison with $w$ and $m$, respectively, yields
+\[
+ KH(v)\le g^\top(v-w)+\eta\le Q^2+\eta,\qquad
+ g^\top v\ge\tfrac12(g^\top w+g^\top u)-\eta .
+\]
+Here the coordinate diameter is at most $Q$ and $\|g\|_1\le Q$. In particular $H(v)\le\theta/16$.
+
+To advance, use $w'=v$, $\tau'=\tau+2\theta$ and, in the proof, $u'=u\wedge v$. The vector $v\vee u$ belongs to the same box and $H(v\vee u)\le H(v)$ term by term. Indeed if $v$ supplies coordinate $i$, enlarging coordinate $j$ only helps. Otherwise $u_i\ge v_i\ge w_i/2$ and $\tau u_i/w_i\ge1/2\ge\theta$. Inequality~\eqref{eq:sign-shadow} makes the modified hinge zero for the term supplied by $u$. Approximate optimality of $v$ therefore implies $g^\top(v\vee u)\le g^\top v+\eta$ and hence $g^\top u'\ge g^\top u-\eta$.
+
+For feasibility, every row at $v$ obeys
+\[
+ a_e v_i-b_e v_j
+ \le (\tau+\theta)v_i/w_i+H(v)
+ \le \tau'v_i/w_i\le\tau' .
+\]
+Both $u$ and $v$ satisfy
+$a_e x_i-b_e x_j\le\max\{\theta,\tau' x_i/w_i\}$.
+This property is closed under coordinatewise minima of nonnegative vectors: it is equivalent to
+$b_e x_j\ge\min\{a_e x_i-\theta,(a_e-\tau'/w_i)x_i\}$.
+If the second slope is negative the condition is automatic; otherwise the right-hand side is nondecreasing in $x_i$. Consequently $u'$ satisfies the same inequality. Decreasing the denominator from $w_i$ to $w'_i$ only relaxes it. This proves the invariants for the next step, including rows with $b_e=0$.
+
+Index the steps from zero. Write $q_*=g^\top u_0$, $E_j=q_*-g^\top w_j$. We have $g^\top u_j\ge q_*-j\eta$ and
+$E_{j+1}\le E_j/2+(j/2+1)\eta$.
+Since $E_0\le Q^2$, induction gives $E_T\le 2^{-T}Q^2+(T+1)\eta$. The last row allowance is $1+2T\theta=5/4$. Returning $w_T$ proves the claim.
+\end{proof}
+
+\subsection{The outer update and its stopping rule}
+
+\begin{proof}[Proof of Theorem~\ref{thm:dual}]
+Compute the two signed proposals of Lemma~\ref{lem:signed-progress}. Choose the largest objective gain among the two proposals and the zero move; call the winning signed move $h$. Then
+$d^\top h\ge \theta G/2-e_0$. Take $\bar y=y+h/2$. Since every retained normalized row had value at most $5/4$ and discarded rows have nonpositive value, every original slack stays at least $3s_e/8$. Keep the prices uniformly interior by setting $y'=(1-\nu)\bar y+\nu y^s$, where $\nu=Q^{-10}$. Feasibility and the seed bound give $k_e-B_e y'\ge\nu/Q=Q^{-11}$. This also closes the induction on starting slacks, which holds for $y^s$ in the first round.
+
+Any two feasible prices differ in objective by at most $D_{\rm box}\|d\|_1\le Q^2$. Mixing therefore costs at most $\nu Q^2$ in objective. The new gap satisfies
+\[
+ G'\le(1-\theta/4)G+e_0/2+Q^{-8}.
+\]
+For $Q\ge 2^{16}$, $T\le Q$, $2^{-T}\le Q^{-24}$, and $e_0\le 3Q^{-15}$. Thus $4(e_0/2+Q^{-8})/\theta<1/(2Q)$. The starting gap is at most $Q^2$. Iterating the recurrence for
+$\lceil (4/\theta)\log(2Q^3)\rceil$ rounds makes its geometrically decaying part at most $1/(2Q)$, as required. This predetermined stopping rule uses no primal iterate. Each of $O(\log^2 Q)$ rounds uses two signed searches, each with $O(\log Q)$ factor-two boxes and $O(\log Q)$ local models per box. This yields the stated bound.
+\end{proof}
+\section{Primal recovery by a perturbed dual solve}
+\label{sec:recovery}
+
+The slack of each dual inequality indicates whether its primal variable can carry flow at optimality.
+To recover their amounts, we use one additional dual optimization with
+small random perturbations of both costs and demands. The perturbations
+allow a slack threshold to identify a linearly independent optimal support.
+On such a support the balance equations can be solved by graph traversals.
+The divisions in these traversals use the exact-arithmetic model.
+
+Write \(B=[A;I;-I]\) for the vertical stack of all rows, \(k=(c,R\mathbf
+1,R\mathbf1)\) for their costs, and \(d\) for the full demand vector.
+Assume \(P\ge 2^{20}\) is a power of two bounding the numbers of rows and
+coordinates and \(R\), and that some optimal nonnegative primal vector
+\(v^*\) has \(\|v^*\|_\infty\le P^3\).
+Every row of \(B\) has \(\ell_1\) norm at most two.
+Set
+\[
+ H=P^{80},\qquad h=P^{-112},\qquad \mu=Hh=P^{-32},\qquad
+ \tau=P^{-50},\qquad \epsilon=P^{-200}.
+\]
+Independently for each row and coordinate, draw \(\xi_e\) and \(\zeta_i\)
+uniformly from \(\{0,h,\ldots,(H-1)h\}\). Put \(k'=k+\xi\) and
+\(d'=d+\zeta\). Compute a feasible price \(y'\) within \(\epsilon\) of
+the maximum of \((d')^Ty\) under \(By\le k'\). The strict seed for the
+original dual is still strict. The two coordinate caps now use their
+respective unary costs; the signed-displacement searches use the available
+cap separately in each direction. The increased data and inverse accuracy
+fit a fixed power of \(P\). Keep the set
+\[
+ S=\{e: k'_e-B_e y'\le\tau\}.
+\]
+The following two arguments explain why this observable set determines a flow.
+
+\subsection{Stability under a random demand perturbation}
+
+For the analysis only, impose the redundant box \([-D,D]^{n'}\) with
+\(D=2R+2\). Consider the full price polytope and each polytope obtained
+by deleting a single row while retaining this box. They are all nonempty
+and compact, and are fixed once the cost noises are drawn. The box is
+redundant for the full perturbed problem since the signed unary rows
+already give \(|y_i|\le R+\mu\).
+
+Fix one such polytope \(Y\), a coordinate \(i\), and all demand noises
+except \(\zeta_i\). Let \(g\) be the partially perturbed objective with
+the \(i\)-th noise set to zero. At each integer \(j\) from \(-1\) to \(H\)
+choose a maximizer of \((g+jh\mathbf e_i)^Ty\) on \(Y\), and denote its
+\(i\)-th coordinate by \(p_j\). Optimality at consecutive objectives gives
+\(p_j\le p_{j+1}\). For the objective at \(j\), every
+\(\epsilon\)-optimal \(z\in Y\) satisfies
+\[
+       p_{j-1}-\epsilon/h\ \le z_i\le\ p_{j+1}+\epsilon/h.
+\]
+Indeed, if \(F_j\) is the maximum at \(j\), then
+\(F_{j+1}\ge F_j-\epsilon+h z_i\), whereas
+\(F_{j+1}\le F_j+h p_{j+1}\). The lower bound follows from \(j-1\).
+The sum of \(p_{j+1}-p_{j-1}\) over \(0\le j<H\) is at most \(4D\)
+by telescoping. With \(j=\zeta_i/h\) uniform, Markov's inequality and
+\(2\epsilon/h=2P^{-88}\) imply that the probability of coordinate
+diameter greater than \(P^{-54}\) for the \(\epsilon\)-optimal set is
+at most \(8D P^{54}/H\). A union bound over at most \((P+1)P\)
+polytope--coordinate pairs proves that, except with probability
+\(O(P^{-23})\), the \(\epsilon\)-optimal sets of all these polytopes
+have \(\ell_\infty\) diameter at most \(P^{-54}\).
+
+\subsection{Which rows survive the slack test?}
+
+The perturbed primal is feasible by the signed unit rows and has a finite
+optimum by dual feasibility. Take a minimum-support optimum \(v'\) and
+write \(T=\{e:v'_e>0\}\). The rows indexed by \(T\) are linearly
+independent. Indeed, any dependence allows movement in both directions
+on the positive coordinates while keeping all balances fixed. Optimality
+forces zero cost change along that direction. Moving until a coordinate
+vanishes would yield a smaller support.
+
+Every optimal full price is tight on \(T\) by complementary slackness.
+On the preceding diameter event, its distance from \(y'\) is at most
+\(P^{-54}\). Since \(\|B_e\|_1\le2\), all rows of \(T\) belong to \(S\).
+
+For each row \(e\), designate a canonical optimal price \(z^{(-e)}\) for
+the boxed dual with row \(e\) deleted (for example, use lexicographic
+tie-breaking). This price depends on the other costs and all demands,
+but is independent of \(\xi_e\). For \(e\notin T\), deleting the row
+preserves the optimum value: the primal optimum supported on \(T\)
+still upper-bounds the objective of every feasible price, and the old
+optimal price remains feasible. Consequently \(y'\) is also
+\(\epsilon\)-optimal for the deleted polytope. If \(e\notin T\) yet
+\(e\in S\), its small slack and the diameter bound would give
+\[
+   -2P^{-54}\le k_e+\xi_e-B_e z^{(-e)}\le \tau+2P^{-54}.
+\]
+Conditioning on all the data except \(\xi_e\), the probability of this
+interval event is at most \((\tau+4P^{-54})/\mu+1/H\).
+This estimate applies to each row before any support is selected. A
+union bound over all rows therefore rules out all false inclusions
+except with probability \(O(P^{-17})\), even though \(T\) depends on
+the random input. Together the two bounds give an event of probability \(1-O(P^{-17})\)
+on which every feasible \(\epsilon\)-optimal price yields \(S=T\). If the dual
+solver is randomized, a union bound adds its own failure probability.
+
+\subsection{Solving the supported equations and undoing the perturbation}
+
+Solve \(B_S^Tx=d'\) exactly, setting all other coordinates to zero.
+On the success event this solution exists, is unique, and equals \(v'\)
+on \(S\). Its computation takes linear arithmetic work. To see this,
+draw a graph with one edge for each two-entry row and mark the vertex
+of each one-entry row. In a connected component on \(q\) vertices,
+independence gives at most \(q\) edges and marks in total. The binary
+edges form either a tree with at most one mark or a connected unicyclic
+graph without marks. This also permits a cycle of two parallel edges.
+Peel a leaf by solving its balance equation for its incident edge
+and substituting at the neighbor. Root a marked tree at its mark;
+there the last equation gives the unary flow. In an unmarked tree
+the final equation checks consistency. In the unicyclic case peel
+all branches, then express the cycle flows as affine functions of the
+first cycle flow by successive substitution. The closing equation has
+nonzero coefficient, since otherwise the cycle rows would be dependent.
+Isolated vertices have only their unary equation or a zero-demand check.
+
+To recover the original demands, add \(\zeta_i\) to the negative unit
+variable at each coordinate. Call the resulting flow \(v\). It is
+nonnegative and \(B^Tv=d\) exactly. Its cost can be bounded without
+knowing the sizes of the recovered perturbed flows. An optimal original
+witness \(v^*\) can be made feasible for \(d'\) by adding \(\zeta\) to
+its positive unit variables. Since \(\xi\ge0\), comparison to this
+witness gives
+\[
+ k^Tv\le \operatorname{OPT}_{\rm gr}
+        +\mu\|v^*\|_1+(2R+\mu)n'\mu
+ \le \operatorname{OPT}_{\rm gr}+2P^{-28}.
+\]
+One may check nonnegativity, exact balance, and the gap against a separately
+computed feasible high-accuracy original price. For an original objective
+error at most \(P^{-120}\), the checked gap is at most \(3P^{-28}\) on
+success. A failed check, inconsistent support, or singular cycle can be
+restarted with fresh noise. The auxiliary boxed and row-deleted optima in
+the proof are never computed. Recovery adds one invocation of the dual
+algorithm, random grid draws and linear arithmetic work.
+\section{Original flows and total work}\label{sec:finish}
+\begin{proposition}[Removing the signed unit variables]\label{prop:transfer}
+Write $a=\mathbf1^\top(r^++r^-)$ for the total artificial flow. If $v$ is
+feasible for \eqref{eq:primal} with cost at most $\mathrm{OPT}_G+e_0$,
+$0\le e_0\le1$, then
+\[
+ a\le\frac{2C+e_0}{R-W^2},\qquad
+ \|A_G^\top\bar x-d^G\|_\infty\le(1+W)a,\qquad
+ (c^G)^\top\bar x\le k^\top v,
+\]
+where $\bar x_e=\min(u_e,f_{i\to k_e})$ for $e=(i,j)$.
+An optimal grounded flow exists and admits a bound $\|v^*\|_\infty\le P^3$.
+\end{proposition}
+\begin{proof}
+Write $x_e=f_{i\to k_e}$, $g_e=f_{j\to k_e}$, and $t=r^+-r^-$.
+The private equation is $\gamma_e x_e+g_e+t_{k_e}=\gamma_e u_e$.
+Hence $(x_e-u_e)_+\le |t_{k_e}|/\gamma_e$, giving
+$\|x-\bar x\|_1\le Wa$. Substitution of
+$g_e=\gamma_e(u_e-x_e)-t_{k_e}$ into the original-vertex equations yields
+\[
+ (A_G^\top x-d^G)_j=-t_j-\sum_{e\text{ entering }j}t_{k_e}.
+\]
+The absolute value is at most $a$. Each entry of $A_G$ has magnitude
+at most one, so clipping changes any coordinate by at most $Wa$.
+Since $\|c^G\|_\infty\le W$, clipping increases physical cost by at
+most $W^2a$. Paying for this out of the $Ra$ artificial cost proves
+$(c^G)^\top\bar x\le k^\top v-(R-W^2)a$.
+For the reverse estimate use $(c^G)^\top\bar x\ge -(C-1)$ and
+$\mathrm{OPT}_G\le C-1$, which give the displayed mass bound.
+
+An original optimum extends with no artificial variables. On its grounded
+cost sublevel the preceding estimates bound $a$, $x_e\le u_e+Wa$, and
+$g_e\le\gamma_e u_e+|t_{k_e}|$. This nonempty closed bounded sublevel
+contains a minimizer. With \eqref{eq:R}, $a\le1$ on the sublevel;
+all its coordinates are at most $2W+1\le P^3$.
+\end{proof}
+
+\begin{proof}[Proof of Theorem~\ref{thm:main}]
+The original grounded dual has a strict seed as in Theorem~\ref{thm:dual},
+and its optimum equals the attained primal optimum by LP duality.
+The number of rows is $2m+2(n+m)$, the coefficient magnitudes are at most
+one, and $\|d\|_1\le nW+2mW$ by the demand formulas. Run
+Theorem~\ref{thm:dual} with $Q=P^{120}$ to obtain an original feasible
+$y$ of dual shortfall at most $P^{-120}$. Use Section~\ref{sec:recovery}
+with $Q=P^{200}$ for the perturbed solve. The chosen $Q$ also bounds
+the asymmetrically perturbed price-box width, demand norm, and reciprocal
+seed slack. Proposition~\ref{prop:transfer} supplies the required optimal
+witness bound. On success the repaired $v$ satisfies
+\[
+  B^\top v=d,\quad v\ge0,\quad
+  0\le k^\top v-d^\top y\le 2P^{-28}+P^{-120}\le\varepsilon .
+\]
+In particular $k^\top v\le\mathrm{OPT}_G+\varepsilon$ by the zero-artificial
+extension of the original optimum. The choice of $R$ ensures
+$(1+W)(2C+1)/(R-W^2)\le\delta$. The original-flow claims now follow
+from Proposition~\ref{prop:transfer}.
+
+The counts for each invocation of Theorem~\ref{thm:dual} are
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Operation & Number \\
+\midrule
+Price improvement rounds & $O(\log^2 Q)$ \\
+Signed searches per round & $2$ \\
+Factor-two boxes per signed search & $O(\log Q)$ \\
+Ordinary models per box & $O(\log Q)$ \\
+Integer MCF calls per ordinary model & at most $2$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Both choices of $Q$ have $\log Q=O(\log P)$. All graphs have $O(N)$ arcs
+and vertices. Selecting the support, solving its equations, and checking
+the result use $O(N)$ further exact field operations. Drawing the grid
+perturbations uses $O(N\log P)$ fair random bits. Thus $O(\log^4 P)$
+integer MCF calls and $N\operatorname{polylog}P$ additional work suffice
+with high probability. If a certified output on every termination is
+desired, verify feasibility and the gap and repeat on failure.
+An exact MCF oracle for integers with cost and capacity magnitudes at most
+$P^{O(1)}$ costs $N^{1+o(1)}\operatorname{polylog} P$ work by
+\cite[Theorem~1.1 and Appendix~C]{cklpps}.
+One can use the deterministic bounded-integer min-ratio-cut algorithm of
+\cite[Theorem~6.17]{dualcut} for the bounded-range calls in integer scaling.
+This latter convention counts a further polylogarithmic number of
+bounded-range calls. With a correct deterministic oracle, the only
+failure event in the reduction is support identification. Its probability
+is $O(P^{-17})$. Finally $\log P=O(\log(2+NW/\delta))$ for
+$\varepsilon=\delta$.
+\end{proof}
+
+\paragraph{Arithmetic scope and attribution.}
+The hinge majorization and signed shrinking-box analysis follow the
+supplied note \cite{hinge-note}. That note uses two one-sided flow witnesses
+and a sparse linear system for prescribed-demand recovery, and records an
+active-basis isolation approach in its provenance discussion.
+Section~\ref{sec:recovery} gives a discrete perturbation and
+row-deletion proof so that the only optimization oracle here is ordinary
+MCF. A cycle pivot can be nonzero and arbitrarily small. The linear
+traversal bound is an exact-arithmetic bound and gives no bit-length
+bound for the recovered perturbed flow.
+
+\begin{thebibliography}{9}
+\bibitem{cklpps}
+L. Chen, R. Kyng, Y. P. Liu, R. Peng, M. Probst Gutenberg and S. Sachdeva.
+\emph{Maximum Flow and Minimum-Cost Flow in Almost-Linear Time}.
+FOCS 2022. \href{https://arxiv.org/abs/2203.00671}{arXiv:2203.00671}.
+\bibitem{dualcut}
+J. van den Brand, L. Chen, R. Kyng, Y. P. Liu, S. Meierhans,
+M. Probst Gutenberg and S. Sachdeva.
+\emph{Almost-Linear Time Algorithms for Decremental Graphs:
+Min-Cost Flow and More via Duality}. FOCS 2024.
+\href{https://arxiv.org/abs/2407.10830}{arXiv:2407.10830}.
+\bibitem{hinge-note}
+\emph{Lossy flow through ordinary min-cost flow: A dual reduction using
+homogeneous hinges}. Supplied exact-arithmetic proof note, November 24,
+2026. Sections 2 and 4--7.
+\end{thebibliography}
+\end{document}
