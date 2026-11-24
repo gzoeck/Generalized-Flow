@@ -33,7 +33,7 @@ Every solution folder contains the LaTeX source and a compiled PDF. To rebuild a
 ## Verification status
 
 - **Overall: not yet fully digested.** We have skimmed all outputs and cross-checked them with other models. No draft has been fully verified.
-- **`6.2-sol_nohint_solution.tex`** is **currently being verified** and looks good so far, and is the version we are most interested in: claims reduction to O(log^4 n) calls to ordinary MCF.
+- **`generalized-min-cost-flow.tex`** is **currently being verified** and looks good so far, and is the version we are most interested in: claims reduction to O(log^4 n) calls to ordinary MCF.
 
 ## How the solutions were generated
 
