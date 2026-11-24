@@ -1,6 +1,6 @@
 # AI-Generated Solutions to Generalized Min-Cost Flow
 
-This repository collects **mostly AI-generated** solution drafts for the lossy generalized minimum-cost flow problem (generalized flow where every arc gain satisfies 0 < γₑ). Each draft aims at an almost-linear-time algorithm, and each takes a somewhat different route.
+This repository collects **mostly AI-generated** solution drafts for the generalized minimum-cost flow problem (generalized flow where every arc gain satisfies 0 < γₑ). Each draft aims at an almost-linear-time algorithm, and each takes a somewhat different route.
 
 **Authors / maintainers:** Gernot Zöcklein, Rasmus Kyng, Maximilian Probst-Gutenberg
 
